@@ -9,9 +9,10 @@ import (
 )
 
 type TelegramConfig struct {
-	BotToken string `yaml:"bot_token"`
-	ChatID   string `yaml:"chat_id"`
-	APIURL   string `yaml:"api_url"` // default: https://api.telegram.org
+	BotToken   string `yaml:"bot_token"`
+	ChatID     string `yaml:"chat_id"`
+	APIURL     string `yaml:"api_url"`    // default: https://api.telegram.org
+	SocksProxy string `yaml:"socks_proxy"` // e.g. socks5://user:pass@host:1080
 }
 
 type WebhookConfig struct {

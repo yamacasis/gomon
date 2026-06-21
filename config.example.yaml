@@ -2,6 +2,7 @@ telegram:
   bot_token: "YOUR_BOT_TOKEN_HERE"
   chat_id: "YOUR_CHAT_ID_HERE"
   api_url: "https://api.telegram.org"   # change to your proxy URL if needed
+  socks_proxy: ""                        # e.g. socks5://user:pass@host:1080
 
 webhook:
   url: ""                               # leave empty to disable

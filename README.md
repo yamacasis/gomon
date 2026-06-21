@@ -105,6 +105,7 @@ websites:
 | `telegram.bot_token` | — | Telegram bot token from @BotFather |
 | `telegram.chat_id` | — | Target chat ID (use @userinfobot to find yours) |
 | `telegram.api_url` | `https://api.telegram.org` | Telegram API base URL — set to a proxy for restricted networks |
+| `telegram.socks_proxy` | — | SOCKS5 proxy for Telegram requests, e.g. `socks5://user:pass@host:1080` |
 | `webhook.url` | — | HTTP endpoint to POST alerts to; leave empty to disable |
 | `webhook.headers` | — | Key/value map of HTTP headers (e.g. `Authorization`) |
 | `heartbeat.time` | `08:00` | Daily report time (HH:MM, 24-hour, local timezone) |
@@ -136,7 +137,19 @@ Stop with `Ctrl+C` or `SIGTERM`.
 
 ### Using a Telegram proxy
 
-If Telegram is blocked on your network, point `api_url` at a self-hosted [Telegram Bot API server](https://github.com/tdlib/telegram-bot-api) or any compatible HTTP proxy:
+If Telegram is blocked on your network you have two options — use either or both together:
+
+**SOCKS5 proxy** — routes all Telegram HTTP requests through the proxy:
+
+```yaml
+telegram:
+  bot_token: "YOUR_TOKEN"
+  chat_id: "YOUR_CHAT_ID"
+  socks_proxy: "socks5://host:1080"           # no auth
+  # socks_proxy: "socks5://user:pass@host:1080"  # with auth
+```
+
+**Custom API URL** — point at a self-hosted [Telegram Bot API server](https://github.com/tdlib/telegram-bot-api) or HTTP reverse proxy:
 
 ```yaml
 telegram:
@@ -144,6 +157,8 @@ telegram:
   chat_id: "YOUR_CHAT_ID"
   api_url: "https://tg-proxy.example.com"
 ```
+
+Both options can be used simultaneously — the SOCKS5 proxy tunnels the connection, while `api_url` changes the endpoint.
 
 ## Webhook Notifications
 

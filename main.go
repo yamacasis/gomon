@@ -24,7 +24,10 @@ func main() {
 	}
 	defer logger.close()
 
-	notifiers := buildNotifiers(cfg)
+	notifiers, err := buildNotifiers(cfg)
+	if err != nil {
+		log.Fatalf("notifiers: %v", err)
+	}
 	log.Printf("starting gomon — monitoring %d site(s), %d notifier(s)", len(cfg.Websites), len(notifiers))
 
 	for _, site := range cfg.Websites {
