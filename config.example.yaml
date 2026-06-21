@@ -1,0 +1,23 @@
+telegram:
+  bot_token: "YOUR_BOT_TOKEN_HERE"
+  chat_id: "YOUR_CHAT_ID_HERE"
+
+heartbeat:
+  time: "08:00"
+
+log_file: "monitor.log"
+
+websites:
+  - url: "https://example.com"
+    interval: 30s
+    ssl: true
+    ssl_min_days: 30
+
+  - url: "https://api.example.com:8443"
+    interval: 1m
+    ssl: true
+    ssl_min_days: 14
+
+  - url: "http://internal.example.com:8080"
+    interval: 5m
+    ssl: false

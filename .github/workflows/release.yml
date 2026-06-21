@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            asset_name: gomon-linux-amd64
+          - goos: linux
+            goarch: arm64
+            asset_name: gomon-linux-arm64
+          - goos: windows
+            goarch: amd64
+            asset_name: gomon-windows-amd64.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.asset_name }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Gomon ${{ github.ref_name }}"
+          body: |
+            ## Gomon ${{ github.ref_name }}
+
+            ### Download
+
+            | Platform | File |
+            |---|---|
+            | Linux x86-64 | `gomon-linux-amd64` |
+            | Linux ARM64  | `gomon-linux-arm64` |
+            | Windows x86-64 | `gomon-windows-amd64.exe` |
+
+            ### Quick start
+
+            1. Download the binary for your platform
+            2. Create a `config.yaml` (see [README](README.md) or `config.example.yaml`)
+            3. Fill in your Telegram bot token and chat ID
+            4. Run: `./gomon` (Linux) or `gomon.exe` (Windows)
+          files: |
+            dist/gomon-linux-amd64
+            dist/gomon-linux-arm64
+            dist/gomon-windows-amd64.exe
+          generate_release_notes: true

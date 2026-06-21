@@ -1,0 +1,13 @@
+# Build output
+gomon
+gomon.exe
+
+# Config with secrets
+config.yaml
+
+# Runtime data
+*.log
+
+# Go workspace
+go.work
+go.work.sum
