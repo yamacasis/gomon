@@ -2,6 +2,7 @@
 
 A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML content, and SSL certificate expiry — sending Telegram alerts and daily summary reports.
 
+
 ## Features
 
 - Monitors multiple websites on independent intervals
