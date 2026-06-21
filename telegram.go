@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -25,6 +26,8 @@ func (t *Telegram) send(text string) error {
 		return nil
 	}
 
+	log.Printf("[TELEGRAM] sending to chat %s via %s", t.cfg.ChatID, t.cfg.APIURL)
+
 	url := fmt.Sprintf("%s/bot%s/sendMessage", t.cfg.APIURL, t.cfg.BotToken)
 
 	payload, _ := json.Marshal(map[string]string{
@@ -40,7 +43,10 @@ func (t *Telegram) send(text string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("telegram returned HTTP %d", resp.StatusCode)
+		err := fmt.Errorf("telegram returned HTTP %d", resp.StatusCode)
+		log.Printf("[TELEGRAM] error: %v", err)
+		return err
 	}
+	log.Printf("[TELEGRAM] sent ok")
 	return nil
 }

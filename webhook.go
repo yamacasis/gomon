@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 )
@@ -20,6 +21,8 @@ func (w *Webhook) send(text string) error {
 	if w.cfg.URL == "" {
 		return nil
 	}
+
+	log.Printf("[WEBHOOK] sending to %s", w.cfg.URL)
 
 	payload, _ := json.Marshal(map[string]string{
 		"text":      text,
@@ -42,7 +45,10 @@ func (w *Webhook) send(text string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+		err := fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+		log.Printf("[WEBHOOK] error: %v", err)
+		return err
 	}
+	log.Printf("[WEBHOOK] sent ok (HTTP %d)", resp.StatusCode)
 	return nil
 }
