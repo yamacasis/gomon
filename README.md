@@ -16,13 +16,47 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.22+ (build from source only)
 - At least one notifier configured (Telegram and/or webhook)
 
 ## Installation
 
+### Linux — one-line install (recommended)
+
+Downloads the latest release binary, creates a `gomon` system user, installs the systemd service, and drops an example config at `/etc/gomon/config.yaml`:
+
 ```bash
-git clone <repo-url>
+curl -fsSL https://raw.githubusercontent.com/yamacasis/gomon/main/install.sh | sudo bash
+```
+
+Or download and inspect first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yamacasis/gomon/main/install.sh -o install.sh
+# review install.sh ...
+sudo bash install.sh
+```
+
+**After install**, edit the config and start the service:
+
+```bash
+sudo nano /etc/gomon/config.yaml   # set bot_token, chat_id, websites
+sudo systemctl start gomon
+sudo journalctl -u gomon -f        # watch live logs
+```
+
+**Uninstall:**
+
+```bash
+sudo bash install.sh --uninstall
+```
+
+---
+
+### Build from source
+
+```bash
+git clone https://github.com/yamacasis/gomon
 cd gomon
 go mod tidy
 go build -o gomon .

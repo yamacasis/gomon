@@ -1,0 +1,25 @@
+[Unit]
+Description=Gomon Website Monitor
+Documentation=https://github.com/yamacasis/gomon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gomon
+Group=gomon
+ExecStart=/usr/local/bin/gomon /etc/gomon/config.yaml
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gomon
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/gomon
+
+[Install]
+WantedBy=multi-user.target
