@@ -1,22 +1,23 @@
 # Gomon
 
-A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML content, and SSL certificate expiry — sending Telegram alerts and daily summary reports.
-
+A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML content, and SSL certificate expiry — sending alerts via Telegram and/or webhook with daily summary reports.
 
 ## Features
 
 - Monitors multiple websites on independent intervals
 - Detects site downtime (HTTP errors, no response, non-HTML content)
 - Checks SSL certificate expiry against a configurable minimum days threshold
-- Sends a single combined Telegram alert when a site is down or SSL is expiring
+- Sends a single combined alert when a site is down or SSL is expiring
 - Sends a recovery notification when a site comes back online
-- Daily heartbeat report via Telegram with uptime % and SSL status per site
+- Daily heartbeat report with uptime % and SSL status per site
 - Appends structured check results to a log file
+- **Telegram notifications** with optional custom/proxied API URL
+- **Generic webhook notifications** with custom headers for any HTTP endpoint
 
 ## Requirements
 
 - Go 1.22+
-- A Telegram bot token and chat ID
+- At least one notifier configured (Telegram and/or webhook)
 
 ## Installation
 
@@ -29,12 +30,18 @@ go build -o gomon .
 
 ## Configuration
 
-Copy and edit `config.yaml`:
+Copy `config.example.yaml` to `config.yaml` and edit:
 
 ```yaml
 telegram:
   bot_token: "YOUR_BOT_TOKEN"
   chat_id: "YOUR_CHAT_ID"
+  api_url: "https://api.telegram.org"  # change for proxy
+
+webhook:
+  url: "https://your-server.com/hook"  # leave empty to disable
+  headers:
+    Authorization: "Bearer YOUR_TOKEN"
 
 heartbeat:
   time: "08:00"       # 24-hour local time for daily report
@@ -63,12 +70,17 @@ websites:
 |---|---|---|
 | `telegram.bot_token` | — | Telegram bot token from @BotFather |
 | `telegram.chat_id` | — | Target chat ID (use @userinfobot to find yours) |
+| `telegram.api_url` | `https://api.telegram.org` | Telegram API base URL — set to a proxy for restricted networks |
+| `webhook.url` | — | HTTP endpoint to POST alerts to; leave empty to disable |
+| `webhook.headers` | — | Key/value map of HTTP headers (e.g. `Authorization`) |
 | `heartbeat.time` | `08:00` | Daily report time (HH:MM, 24-hour, local timezone) |
 | `log_file` | `monitor.log` | Path to the append-only status log |
 | `websites[].url` | — | Full URL or `host:port` (scheme inferred from `ssl`) |
 | `websites[].interval` | `60s` | Check frequency — supports `s`, `m`, `h` suffixes |
 | `websites[].ssl` | `false` | Whether to check SSL certificate expiry |
 | `websites[].ssl_min_days` | `30` | Alert threshold: days until cert expiry |
+
+Both `telegram` and `webhook` are optional — configure one or both. Alerts are delivered to all configured notifiers simultaneously.
 
 ## Usage
 
@@ -87,6 +99,40 @@ Stop with `Ctrl+C` or `SIGTERM`.
 1. Message `@BotFather` on Telegram and run `/newbot` to create a bot — copy the token.
 2. Message `@userinfobot` to get your personal chat ID, or add the bot to a group and use the group's ID (prefixed with `-100`).
 3. Paste both values into `config.yaml`.
+
+### Using a Telegram proxy
+
+If Telegram is blocked on your network, point `api_url` at a self-hosted [Telegram Bot API server](https://github.com/tdlib/telegram-bot-api) or any compatible HTTP proxy:
+
+```yaml
+telegram:
+  bot_token: "YOUR_TOKEN"
+  chat_id: "YOUR_CHAT_ID"
+  api_url: "https://tg-proxy.example.com"
+```
+
+## Webhook Notifications
+
+Gomon sends a `POST` request with a JSON body to `webhook.url` on every alert:
+
+```json
+{
+  "text": "🚨 Alert: example.com\n\n🔴 Site is DOWN\nError: connection refused",
+  "timestamp": "2026-06-21T10:00:00Z"
+}
+```
+
+Use `webhook.headers` to pass authentication tokens:
+
+```yaml
+webhook:
+  url: "https://your-server.com/notify"
+  headers:
+    Authorization: "Bearer secret123"
+    X-Source: "gomon"
+```
+
+This makes it compatible with Slack incoming webhooks, Discord webhooks, ntfy.sh, custom endpoints, or any service that accepts a JSON POST.
 
 ## Alerts
 
@@ -142,12 +188,14 @@ The daily heartbeat reads this file to build its report.
 
 ```
 gomon/
-├── main.go        # Entry point
-├── config.go      # YAML config loading
-├── checker.go     # HTTP + SSL check logic
-├── monitor.go     # Per-site monitoring loop and alert state
-├── telegram.go    # Telegram Bot API client
-├── logger.go      # Log file writer and reader
-├── heartbeat.go   # Daily report scheduler and formatter
-└── config.yaml    # Configuration file
+├── main.go          # Entry point
+├── config.go        # YAML config loading
+├── checker.go       # HTTP + SSL check logic
+├── monitor.go       # Per-site monitoring loop and alert state
+├── notifier.go      # Notifier interface — fans out to all configured backends
+├── telegram.go      # Telegram Bot API client (supports custom/proxied API URL)
+├── webhook.go       # Generic HTTP webhook notifier
+├── logger.go        # Log file writer and reader
+├── heartbeat.go     # Daily report scheduler and formatter
+└── config.yaml      # Configuration file (gitignored — copy from config.example.yaml)
 ```
