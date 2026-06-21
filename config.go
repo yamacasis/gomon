@@ -8,11 +8,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type TelegramConfig struct {
+	BotToken string `yaml:"bot_token"`
+	ChatID   string `yaml:"chat_id"`
+	APIURL   string `yaml:"api_url"` // default: https://api.telegram.org
+}
+
+type WebhookConfig struct {
+	URL     string            `yaml:"url"`
+	Headers map[string]string `yaml:"headers"` // optional auth headers
+}
+
 type Config struct {
-	Telegram struct {
-		BotToken string `yaml:"bot_token"`
-		ChatID   string `yaml:"chat_id"`
-	} `yaml:"telegram"`
+	Telegram  TelegramConfig `yaml:"telegram"`
+	Webhook   WebhookConfig  `yaml:"webhook"`
 	Heartbeat struct {
 		Time string `yaml:"time"` // "HH:MM" 24-hour format
 	} `yaml:"heartbeat"`

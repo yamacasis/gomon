@@ -7,24 +7,28 @@ import (
 	"net/http"
 )
 
+const defaultTelegramAPI = "https://api.telegram.org"
+
 type Telegram struct {
-	token  string
-	chatID string
+	cfg TelegramConfig
 }
 
-func newTelegram(token, chatID string) *Telegram {
-	return &Telegram{token: token, chatID: chatID}
+func newTelegram(cfg TelegramConfig) *Telegram {
+	if cfg.APIURL == "" {
+		cfg.APIURL = defaultTelegramAPI
+	}
+	return &Telegram{cfg: cfg}
 }
 
 func (t *Telegram) send(text string) error {
-	if t.token == "" || t.chatID == "" {
+	if t.cfg.BotToken == "" || t.cfg.ChatID == "" {
 		return nil
 	}
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.token)
+	url := fmt.Sprintf("%s/bot%s/sendMessage", t.cfg.APIURL, t.cfg.BotToken)
 
 	payload, _ := json.Marshal(map[string]string{
-		"chat_id":    t.chatID,
+		"chat_id":    t.cfg.ChatID,
 		"text":       text,
 		"parse_mode": "Markdown",
 	})

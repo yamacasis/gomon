@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-func runHeartbeat(cfg *Config, tg *Telegram, logger *Logger) {
+
+func runHeartbeat(cfg *Config, notifiers []Notifier, logger *Logger) {
 	for {
 		next := nextFireTime(cfg.Heartbeat.Time)
 		time.Sleep(time.Until(next))
@@ -16,9 +17,7 @@ func runHeartbeat(cfg *Config, tg *Telegram, logger *Logger) {
 		if err != nil {
 			log.Printf("heartbeat report error: %v", err)
 		} else {
-			if err := tg.send(report); err != nil {
-				log.Printf("heartbeat telegram error: %v", err)
-			}
+			notify(notifiers, report)
 		}
 	}
 }

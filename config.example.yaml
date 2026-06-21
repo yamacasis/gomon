@@ -1,6 +1,12 @@
 telegram:
   bot_token: "YOUR_BOT_TOKEN_HERE"
   chat_id: "YOUR_CHAT_ID_HERE"
+  api_url: "https://api.telegram.org"   # change to your proxy URL if needed
+
+webhook:
+  url: ""                               # leave empty to disable
+  headers:
+    # Authorization: "Bearer YOUR_TOKEN"
 
 heartbeat:
   time: "08:00"

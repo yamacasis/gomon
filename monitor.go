@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 )
@@ -12,20 +11,19 @@ type monitorState struct {
 	sslAlerted bool
 }
 
-func runMonitor(site Website, tg *Telegram, logger *Logger) {
+func runMonitor(site Website, notifiers []Notifier, logger *Logger) {
 	state := &monitorState{}
 
-	// Check immediately on startup, then tick
-	doCheck(site, state, tg, logger)
+	doCheck(site, state, notifiers, logger)
 
 	ticker := time.NewTicker(site.Interval)
 	defer ticker.Stop()
 	for range ticker.C {
-		doCheck(site, state, tg, logger)
+		doCheck(site, state, notifiers, logger)
 	}
 }
 
-func doCheck(site Website, state *monitorState, tg *Telegram, logger *Logger) {
+func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Logger) {
 	result := checkSite(site)
 	logger.write(result)
 
@@ -35,18 +33,11 @@ func doCheck(site Website, state *monitorState, tg *Telegram, logger *Logger) {
 	newSSL := sslExpiring && !state.sslAlerted
 
 	if newDown || newSSL {
-		msg := buildAlertMsg(site, result, !result.Up, sslExpiring)
-		if err := tg.send(msg); err != nil {
-			log.Printf("telegram alert error: %v", err)
-		}
+		notify(notifiers, buildAlertMsg(site, result, !result.Up, sslExpiring))
 	}
 
-	// Recovery notice
 	if result.Up && state.wasDown {
-		msg := fmt.Sprintf("✅ *Site Recovered*\n`%s` is back online", site.URL)
-		if err := tg.send(msg); err != nil {
-			log.Printf("telegram recovery error: %v", err)
-		}
+		notify(notifiers, fmt.Sprintf("✅ *Site Recovered*\n`%s` is back online", site.URL))
 	}
 
 	state.wasDown = !result.Up

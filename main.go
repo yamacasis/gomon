@@ -24,16 +24,15 @@ func main() {
 	}
 	defer logger.close()
 
-	tg := newTelegram(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
-
-	log.Printf("starting gomon — monitoring %d site(s)", len(cfg.Websites))
+	notifiers := buildNotifiers(cfg)
+	log.Printf("starting gomon — monitoring %d site(s), %d notifier(s)", len(cfg.Websites), len(notifiers))
 
 	for _, site := range cfg.Websites {
-		site := site // capture loop variable
-		go runMonitor(site, tg, logger)
+		site := site
+		go runMonitor(site, notifiers, logger)
 	}
 
-	go runHeartbeat(cfg, tg, logger)
+	go runHeartbeat(cfg, notifiers, logger)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
