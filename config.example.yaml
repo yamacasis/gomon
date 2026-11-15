@@ -47,6 +47,9 @@ prometheus_targets:
     timeout: 10s
     failure_threshold: 2
     recovery_threshold: 2
+    basic_auth:
+      username: "admin"
+      password: "CHANGE_ME"
     headers:
       # Authorization: "Bearer YOUR_TOKEN"
     thresholds:

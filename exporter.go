@@ -151,6 +151,9 @@ func checkPrometheusTarget(target PrometheusTargetConfig, state *exporterState) 
 	for key, value := range target.Headers {
 		req.Header.Set(key, value)
 	}
+	if target.BasicAuth != nil {
+		req.SetBasicAuth(target.BasicAuth.Username, target.BasicAuth.Password)
+	}
 
 	response, err := client.Do(req)
 	if err != nil {

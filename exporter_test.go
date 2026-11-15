@@ -121,7 +121,12 @@ func TestExporterStateDebouncesResourceAndEndpointAlerts(t *testing.T) {
 }
 
 func TestCheckPrometheusTargetScrapesHTTPMetrics(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "admin" || password != "secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		_, _ = w.Write([]byte("node_memory_MemTotal_bytes 100\nnode_memory_MemAvailable_bytes 40\n"))
 	}))
 	defer server.Close()
@@ -129,6 +134,7 @@ func TestCheckPrometheusTargetScrapesHTTPMetrics(t *testing.T) {
 		Name:       "node-a",
 		URL:        server.URL,
 		Type:       "node_exporter",
+		BasicAuth:  &BasicAuthConfig{Username: "admin", Password: "secret"},
 		Timeout:    time.Second,
 		Thresholds: NodeExporterThresholds{CPUPercent: 101, RAMPercent: 101, DiskPercent: 101, DiskIOPercent: 101, LoadPerCPU: 101, TemperatureCelsius: 101},
 	}

@@ -55,12 +55,18 @@ type PrometheusTargetConfig struct {
 	Name              string                 `yaml:"name"`
 	URL               string                 `yaml:"url"`
 	Type              string                 `yaml:"type"`
+	BasicAuth         *BasicAuthConfig       `yaml:"basic_auth"`
 	Headers           map[string]string      `yaml:"headers"`
 	Interval          time.Duration          `yaml:"interval"`
 	Timeout           time.Duration          `yaml:"timeout"`
 	FailureThreshold  int                    `yaml:"failure_threshold"`
 	RecoveryThreshold int                    `yaml:"recovery_threshold"`
 	Thresholds        NodeExporterThresholds `yaml:"thresholds"`
+}
+
+type BasicAuthConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 type NodeExporterThresholds struct {
@@ -160,6 +166,17 @@ func loadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("prometheus target %q: %w", target.Name, err)
 		}
 		target.URL = normalizedURL
+		if target.BasicAuth != nil {
+			target.BasicAuth.Username = strings.TrimSpace(target.BasicAuth.Username)
+			if target.BasicAuth.Username == "" {
+				return nil, fmt.Errorf("prometheus target %q basic_auth.username is required", target.Name)
+			}
+			for header := range target.Headers {
+				if strings.EqualFold(strings.TrimSpace(header), "Authorization") {
+					return nil, fmt.Errorf("prometheus target %q cannot use basic_auth and an Authorization header together", target.Name)
+				}
+			}
+		}
 		if target.Interval <= 0 {
 			target.Interval = defaultExporterInterval
 		}
@@ -186,7 +203,7 @@ func normalizePrometheusURL(raw string) (string, error) {
 		return "", fmt.Errorf("url scheme must be http or https")
 	}
 	if parsed.User != nil {
-		return "", fmt.Errorf("credentials in url are not supported; use headers instead")
+		return "", fmt.Errorf("credentials in url are not supported; use basic_auth instead")
 	}
 	if parsed.Path == "" || parsed.Path == "/" {
 		parsed.Path = "/metrics"

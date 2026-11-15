@@ -118,6 +118,9 @@ prometheus_targets:
     timeout: 10s
     failure_threshold: 2
     recovery_threshold: 2
+    basic_auth:
+      username: "admin"
+      password: "CHANGE_ME"
     thresholds:
       cpu_percent: 90
       ram_percent: 90
@@ -153,6 +156,7 @@ prometheus_targets:
 | `prometheus_targets[].name` | — | Unique label used for the monitored server |
 | `prometheus_targets[].url` | — | Prometheus exposition URL; `/metrics` is added when the URL has no path |
 | `prometheus_targets[].type` | `node_exporter` | Exporter-specific analyzer; currently `node_exporter` |
+| `prometheus_targets[].basic_auth` | — | Optional HTTP Basic Auth credentials (`username` and `password`) |
 | `prometheus_targets[].headers` | — | Optional request headers for authentication |
 | `prometheus_targets[].interval` | `60s` | Scrape frequency |
 | `prometheus_targets[].timeout` | `10s` | Timeout for one exporter scrape |
