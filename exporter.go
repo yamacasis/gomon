@@ -17,6 +17,14 @@ import (
 
 const maxPrometheusResponseBytes = 64 << 20
 
+var requiredNodeCollectors = map[string]struct{}{
+	"cpu":        {},
+	"diskstats":  {},
+	"filesystem": {},
+	"loadavg":    {},
+	"meminfo":    {},
+}
+
 type ExporterResult struct {
 	Up           bool
 	CheckedAt    time.Time
@@ -424,7 +432,8 @@ func buildNodeExporterIssues(target PrometheusTargetConfig, families map[string]
 		}
 	}
 	for collector, success := range result.Collectors {
-		if success == 0 {
+		_, required := requiredNodeCollectors[collector]
+		if required && success == 0 {
 			issues = append(issues, ExporterIssue{Key: "collector:" + sanitizeIssueKey(collector), Kind: "COLLECTOR", Summary: fmt.Sprintf("node_exporter collector %s failed", collector)})
 		}
 	}

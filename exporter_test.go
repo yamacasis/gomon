@@ -54,6 +54,7 @@ node_filesystem_device_error{device="/dev/sda1",mountpoint="/",fstype="ext4"} 0
 node_disk_io_time_seconds_total{device="sda"} 10.8
 node_hwmon_temp_celsius{chip="coretemp",sensor="temp1"} 90
 node_scrape_collector_success{collector="filesystem"} 0
+node_scrape_collector_success{collector="zfs"} 0
 node_md_disks{device="md0",state="failed"} 1
 smartmon_device_smart_healthy{device="sdb"} 0
 `)
@@ -81,6 +82,9 @@ smartmon_device_smart_healthy{device="sdb"} 0
 		if !keys[key] {
 			t.Errorf("expected issue %q, got %+v", key, second.Issues)
 		}
+	}
+	if keys["collector:zfs"] {
+		t.Fatal("an unavailable optional collector must not trigger an alert")
 	}
 }
 
