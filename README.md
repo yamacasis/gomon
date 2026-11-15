@@ -13,12 +13,14 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 - Sends a recovery notification when a site comes back online
 - Daily heartbeat report with uptime % and SSL status per site
 - Appends structured check results to a log file
+- Exposes Gomon, website, and exporter health at `/metrics/me` for Prometheus
+- Scrapes remote `node_exporter` endpoints and alerts on CPU, RAM, disk, I/O, load, temperature, collector, RAID, and SMART health
 - **Telegram notifications** with optional custom/proxied API URL
 - **Generic webhook notifications** with custom headers for any HTTP endpoint
 
 ## Requirements
 
-- Go 1.22+ (build from source only)
+- Go 1.25+ (build from source only)
 - At least one notifier configured (Telegram and/or webhook)
 
 ## Installation
@@ -82,6 +84,10 @@ webhook:
 heartbeat:
   time: "08:00"       # 24-hour local time for daily report
 
+metrics:
+  port: 9091
+  listen_address: "0.0.0.0"
+
 log_file: "monitor.log"
 
 websites:
@@ -103,6 +109,22 @@ websites:
   - url: "http://internal.example.com"
     interval: 5m
     ssl: false
+
+prometheus_targets:
+  - name: "server-01"
+    url: "http://10.0.0.10:9100/metrics"
+    type: "node_exporter"
+    interval: 1m
+    timeout: 10s
+    failure_threshold: 2
+    recovery_threshold: 2
+    thresholds:
+      cpu_percent: 90
+      ram_percent: 90
+      disk_percent: 90
+      disk_io_percent: 95
+      load_per_cpu: 2
+      temperature_celsius: 85
 ```
 
 ### Config fields
@@ -116,6 +138,8 @@ websites:
 | `webhook.url` | — | HTTP endpoint to POST alerts to; leave empty to disable |
 | `webhook.headers` | — | Key/value map of HTTP headers (e.g. `Authorization`) |
 | `heartbeat.time` | `08:00` | Daily report time (HH:MM, 24-hour, local timezone) |
+| `metrics.port` | `0` | Port for Gomon's Prometheus endpoint; zero disables it |
+| `metrics.listen_address` | `0.0.0.0` | Address used when the metrics endpoint is enabled |
 | `log_file` | `monitor.log` | Path to the append-only status log |
 | `websites[].url` | — | Full URL or `host:port` (scheme inferred from `ssl`) |
 | `websites[].interval` | `60s` | Check frequency — supports `s`, `m`, `h` suffixes |
@@ -126,6 +150,16 @@ websites:
 | `websites[].recovery_threshold` | `2` | Consecutive successful checks required before recovery |
 | `websites[].ssl` | `false` | Whether to check SSL certificate expiry |
 | `websites[].ssl_min_days` | `30` | Alert threshold: days until cert expiry |
+| `prometheus_targets[].name` | — | Unique label used for the monitored server |
+| `prometheus_targets[].url` | — | Prometheus exposition URL; `/metrics` is added when the URL has no path |
+| `prometheus_targets[].type` | `node_exporter` | Exporter-specific analyzer; currently `node_exporter` |
+| `prometheus_targets[].headers` | — | Optional request headers for authentication |
+| `prometheus_targets[].interval` | `60s` | Scrape frequency |
+| `prometheus_targets[].timeout` | `10s` | Timeout for one exporter scrape |
+| `prometheus_targets[].failure_threshold` | `2` | Consecutive bad scrapes required before alerting |
+| `prometheus_targets[].recovery_threshold` | `2` | Consecutive healthy scrapes required before recovery |
+
+Node exporter threshold defaults are CPU `90%`, RAM `90%`, filesystem `90%`, disk I/O busy `95%`, load per CPU `2`, and temperature `85°C`. Set an individual threshold to a negative number to disable that check.
 
 Both `telegram` and `webhook` are optional — configure one or both. Alerts are delivered to all configured notifiers simultaneously.
 
@@ -140,6 +174,37 @@ Both `telegram` and `webhook` are optional — configure one or both. Alerts are
 ```
 
 Stop with `Ctrl+C` or `SIGTERM`.
+
+## Prometheus endpoint
+
+When `metrics.port` is non-zero, Gomon serves its metrics at:
+
+```text
+http://HOST:PORT/metrics/me
+```
+
+Important exported series include:
+
+- `gomon_up` and Go/process runtime metrics
+- `gomon_site_up`, `gomon_site_alerting`, check duration, attempts, HTTP status, and SSL days
+- `gomon_prometheus_target_up` and active alert count
+- `gomon_node_cpu_usage_percent`, memory, load, filesystem usage, disk I/O, temperature, and collector health
+
+Example Prometheus scrape configuration:
+
+```yaml
+scrape_configs:
+  - job_name: gomon
+    metrics_path: /metrics/me
+    static_configs:
+      - targets: ["gomon-host:9091"]
+```
+
+## Node exporter monitoring
+
+Gomon calculates CPU and disk I/O usage from consecutive counter samples, so those two values become available after the second successful scrape. Resource alerts and recoveries use the same consecutive-sample debouncing as website monitoring.
+
+Filesystem read-only/device errors, failed node_exporter collectors, degraded software RAID, and hardware temperatures are checked when their metrics are present. SMART health is checked when the endpoint also exposes `smartmon_device_smart_healthy` or `smartctl_device_smart_status`; standard node_exporter installations do not expose complete SMART data by themselves.
 
 ## Telegram Setup
 
@@ -262,6 +327,8 @@ gomon/
 ├── config.go        # YAML config loading
 ├── checker.go       # HTTP + SSL check logic
 ├── monitor.go       # Per-site monitoring loop and alert state
+├── metrics.go       # Gomon Prometheus registry and /metrics/me server
+├── exporter.go      # Remote Prometheus/node_exporter scraper and analyzer
 ├── notifier.go      # Notifier interface — fans out to all configured backends
 ├── telegram.go      # Telegram Bot API client (supports custom/proxied API URL)
 ├── webhook.go       # Generic HTTP webhook notifier

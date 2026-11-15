@@ -12,6 +12,11 @@ webhook:
 heartbeat:
   time: "08:00"
 
+# Set port to 0 or omit this block to disable the Prometheus endpoint.
+metrics:
+  port: 9091
+  listen_address: "0.0.0.0"
+
 log_file: "monitor.log"
 
 websites:
@@ -33,3 +38,21 @@ websites:
   - url: "http://internal.example.com:8080"
     interval: 5m
     ssl: false
+
+prometheus_targets:
+  - name: "server-01"
+    url: "http://10.0.0.10:9100/metrics"
+    type: "node_exporter"
+    interval: 1m
+    timeout: 10s
+    failure_threshold: 2
+    recovery_threshold: 2
+    headers:
+      # Authorization: "Bearer YOUR_TOKEN"
+    thresholds:
+      cpu_percent: 90
+      ram_percent: 90
+      disk_percent: 90
+      disk_io_percent: 95
+      load_per_cpu: 2
+      temperature_celsius: 85

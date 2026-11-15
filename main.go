@@ -28,11 +28,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("notifiers: %v", err)
 	}
-	log.Printf("starting gomon — monitoring %d site(s), %d notifier(s)", len(cfg.Websites), len(notifiers))
+	metrics := newMonitorMetrics()
+	metricsServer, err := startMetricsServer(cfg.Metrics, metrics)
+	if err != nil {
+		log.Fatalf("metrics server: %v", err)
+	}
+	defer stopMetricsServer(metricsServer)
+
+	log.Printf("starting gomon — monitoring %d site(s), %d prometheus target(s), %d notifier(s)",
+		len(cfg.Websites), len(cfg.PrometheusTargets), len(notifiers))
 
 	for _, site := range cfg.Websites {
 		site := site
-		go runMonitor(site, notifiers, logger)
+		go runMonitor(site, notifiers, logger, metrics)
+	}
+	for _, target := range cfg.PrometheusTargets {
+		target := target
+		go runPrometheusTarget(target, notifiers, metrics)
 	}
 
 	go runHeartbeat(cfg, notifiers, logger)

@@ -17,19 +17,19 @@ type monitorState struct {
 	sslAlerted           bool
 }
 
-func runMonitor(site Website, notifiers []Notifier, logger *Logger) {
+func runMonitor(site Website, notifiers []Notifier, logger *Logger, metrics *monitorMetrics) {
 	state := &monitorState{}
 
-	doCheck(site, state, notifiers, logger)
+	doCheck(site, state, notifiers, logger, metrics)
 
 	ticker := time.NewTicker(site.Interval)
 	defer ticker.Stop()
 	for range ticker.C {
-		doCheck(site, state, notifiers, logger)
+		doCheck(site, state, notifiers, logger, metrics)
 	}
 }
 
-func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Logger) {
+func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Logger, metrics *monitorMetrics) {
 	result := checkSite(site)
 	logger.write(result)
 
@@ -51,6 +51,7 @@ func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Lo
 	}
 
 	messages, recovered := updateMonitorState(site, state, result, sslExpiring)
+	metrics.recordSite(site, state, result)
 	if recovered {
 		log.Printf("[CHECK] RECOVERED %s after %d consecutive successful checks", site.URL, site.RecoveryThreshold)
 	}

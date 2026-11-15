@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -23,11 +25,18 @@ type WebhookConfig struct {
 type Config struct {
 	Telegram  TelegramConfig `yaml:"telegram"`
 	Webhook   WebhookConfig  `yaml:"webhook"`
+	Metrics   MetricsConfig  `yaml:"metrics"`
 	Heartbeat struct {
 		Time string `yaml:"time"` // "HH:MM" 24-hour format
 	} `yaml:"heartbeat"`
-	LogFile  string    `yaml:"log_file"`
-	Websites []Website `yaml:"websites"`
+	LogFile           string                   `yaml:"log_file"`
+	Websites          []Website                `yaml:"websites"`
+	PrometheusTargets []PrometheusTargetConfig `yaml:"prometheus_targets"`
+}
+
+type MetricsConfig struct {
+	Port          int    `yaml:"port"`
+	ListenAddress string `yaml:"listen_address"`
 }
 
 type Website struct {
@@ -42,6 +51,27 @@ type Website struct {
 	SSLMinDays        int           `yaml:"ssl_min_days"`
 }
 
+type PrometheusTargetConfig struct {
+	Name              string                 `yaml:"name"`
+	URL               string                 `yaml:"url"`
+	Type              string                 `yaml:"type"`
+	Headers           map[string]string      `yaml:"headers"`
+	Interval          time.Duration          `yaml:"interval"`
+	Timeout           time.Duration          `yaml:"timeout"`
+	FailureThreshold  int                    `yaml:"failure_threshold"`
+	RecoveryThreshold int                    `yaml:"recovery_threshold"`
+	Thresholds        NodeExporterThresholds `yaml:"thresholds"`
+}
+
+type NodeExporterThresholds struct {
+	CPUPercent         float64 `yaml:"cpu_percent"`
+	RAMPercent         float64 `yaml:"ram_percent"`
+	DiskPercent        float64 `yaml:"disk_percent"`
+	DiskIOPercent      float64 `yaml:"disk_io_percent"`
+	LoadPerCPU         float64 `yaml:"load_per_cpu"`
+	TemperatureCelsius float64 `yaml:"temperature_celsius"`
+}
+
 const (
 	defaultCheckInterval     = 60 * time.Second
 	defaultCheckTimeout      = 15 * time.Second
@@ -49,6 +79,14 @@ const (
 	defaultRetryDelay        = time.Second
 	defaultFailureThreshold  = 2
 	defaultRecoveryThreshold = 2
+	defaultExporterInterval  = 60 * time.Second
+	defaultExporterTimeout   = 10 * time.Second
+	defaultCPUPercent        = 90.0
+	defaultRAMPercent        = 90.0
+	defaultDiskPercent       = 90.0
+	defaultDiskIOPercent     = 95.0
+	defaultLoadPerCPU        = 2.0
+	defaultTemperature       = 85.0
 )
 
 func loadConfig(path string) (*Config, error) {
@@ -65,6 +103,12 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if cfg.Heartbeat.Time == "" {
 		cfg.Heartbeat.Time = "08:00"
+	}
+	if cfg.Metrics.Port < 0 || cfg.Metrics.Port > 65535 {
+		return nil, fmt.Errorf("metrics.port must be between 0 and 65535")
+	}
+	if cfg.Metrics.Port > 0 && cfg.Metrics.ListenAddress == "" {
+		cfg.Metrics.ListenAddress = "0.0.0.0"
 	}
 	for i := range cfg.Websites {
 		if cfg.Websites[i].Interval <= 0 {
@@ -92,5 +136,81 @@ func loadConfig(path string) (*Config, error) {
 			cfg.Websites[i].SSLMinDays = 30
 		}
 	}
+	seenTargetNames := make(map[string]struct{}, len(cfg.PrometheusTargets))
+	for i := range cfg.PrometheusTargets {
+		target := &cfg.PrometheusTargets[i]
+		target.Name = strings.TrimSpace(target.Name)
+		if target.Name == "" {
+			return nil, fmt.Errorf("prometheus_targets[%d].name is required", i)
+		}
+		if _, exists := seenTargetNames[target.Name]; exists {
+			return nil, fmt.Errorf("prometheus target name %q is duplicated", target.Name)
+		}
+		seenTargetNames[target.Name] = struct{}{}
+
+		target.Type = strings.ToLower(strings.TrimSpace(target.Type))
+		if target.Type == "" {
+			target.Type = "node_exporter"
+		}
+		if target.Type != "node_exporter" {
+			return nil, fmt.Errorf("prometheus target %q has unsupported type %q", target.Name, target.Type)
+		}
+		normalizedURL, err := normalizePrometheusURL(target.URL)
+		if err != nil {
+			return nil, fmt.Errorf("prometheus target %q: %w", target.Name, err)
+		}
+		target.URL = normalizedURL
+		if target.Interval <= 0 {
+			target.Interval = defaultExporterInterval
+		}
+		if target.Timeout <= 0 {
+			target.Timeout = defaultExporterTimeout
+		}
+		if target.FailureThreshold <= 0 {
+			target.FailureThreshold = defaultFailureThreshold
+		}
+		if target.RecoveryThreshold <= 0 {
+			target.RecoveryThreshold = defaultRecoveryThreshold
+		}
+		applyNodeExporterThresholdDefaults(&target.Thresholds)
+	}
 	return &cfg, nil
+}
+
+func normalizePrometheusURL(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("url must be an absolute HTTP(S) URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("url scheme must be http or https")
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("credentials in url are not supported; use headers instead")
+	}
+	if parsed.Path == "" || parsed.Path == "/" {
+		parsed.Path = "/metrics"
+	}
+	return parsed.String(), nil
+}
+
+func applyNodeExporterThresholdDefaults(thresholds *NodeExporterThresholds) {
+	if thresholds.CPUPercent == 0 {
+		thresholds.CPUPercent = defaultCPUPercent
+	}
+	if thresholds.RAMPercent == 0 {
+		thresholds.RAMPercent = defaultRAMPercent
+	}
+	if thresholds.DiskPercent == 0 {
+		thresholds.DiskPercent = defaultDiskPercent
+	}
+	if thresholds.DiskIOPercent == 0 {
+		thresholds.DiskIOPercent = defaultDiskIOPercent
+	}
+	if thresholds.LoadPerCPU == 0 {
+		thresholds.LoadPerCPU = defaultLoadPerCPU
+	}
+	if thresholds.TemperatureCelsius == 0 {
+		thresholds.TemperatureCelsius = defaultTemperature
+	}
 }
