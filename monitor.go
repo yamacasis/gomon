@@ -31,6 +31,7 @@ func runMonitor(site Website, notifiers []Notifier, logger *Logger, metrics *mon
 
 func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Logger, metrics *monitorMetrics) {
 	result := checkSite(site)
+	result.Suppressed = shouldSuppressCloudflareNetworkFailure(site, result)
 	logger.write(result)
 
 	sslExpiring := site.SSL && result.SSLDays >= 0 && result.SSLDays < site.SSLMinDays
@@ -42,6 +43,9 @@ func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Lo
 		} else {
 			log.Printf("[CHECK] UP   %s  %s", site.URL, result.StatusMsg)
 		}
+	} else if result.Suppressed {
+		log.Printf("[CHECK] IGNORED %s  policy=cloudflare_network_failure kind=%s attempts=%d duration=%s error=%s",
+			site.URL, result.Kind, result.Attempts, result.Duration.Round(time.Millisecond), result.StatusMsg)
 	} else {
 		log.Printf("[CHECK] DOWN %s  kind=%s attempts=%d duration=%s remote=%s error=%s",
 			site.URL, result.Kind, result.Attempts, result.Duration.Round(time.Millisecond), result.RemoteAddr, result.StatusMsg)
@@ -68,6 +72,9 @@ func updateMonitorState(site Website, state *monitorState, result CheckResult, s
 	recoveryThreshold := site.RecoveryThreshold
 	if recoveryThreshold <= 0 {
 		recoveryThreshold = defaultRecoveryThreshold
+	}
+	if result.Suppressed || shouldSuppressCloudflareNetworkFailure(site, result) {
+		return nil, false
 	}
 
 	var messages []string
@@ -111,9 +118,24 @@ func updateMonitorState(site Website, state *monitorState, result CheckResult, s
 	return messages, recovered
 }
 
+func shouldSuppressCloudflareNetworkFailure(site Website, result CheckResult) bool {
+	if !site.Cloudflare || result.Up || result.StatusCode != 0 {
+		return false
+	}
+	switch result.Kind {
+	case "timeout", "dns", "tls", "connection", "request", "body":
+		return true
+	default:
+		return false
+	}
+}
+
 func buildAlertMsg(site Website, result CheckResult, isDown, sslExpiring bool, failureThreshold int) string {
 	var sb strings.Builder
 	tags := []string{"webcheck", siteAlertTag(site.URL)}
+	if site.Cloudflare {
+		tags = append(tags, "cloudflare")
+	}
 	sb.WriteString(fmt.Sprintf("🚨 *Alert: %s*\n", site.URL))
 
 	if isDown {
@@ -152,7 +174,11 @@ func buildRecoveryMsg(site Website, state *monitorState, result CheckResult, rec
 		sb.WriteString(fmt.Sprintf("\nPrevious cause: %s — %s", displayKind(state.lastFailure.Kind), state.lastFailure.StatusMsg))
 	}
 	sb.WriteString(fmt.Sprintf("\nChecked: %s", result.CheckedAt.Format(time.RFC3339)))
-	return withAlertTags(sb.String(), "webcheck", "recovery", siteAlertTag(site.URL))
+	tags := []string{"webcheck", "recovery", siteAlertTag(site.URL)}
+	if site.Cloudflare {
+		tags = append(tags, "cloudflare")
+	}
+	return withAlertTags(sb.String(), tags...)
 }
 
 func displayKind(kind string) string {

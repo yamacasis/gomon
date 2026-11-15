@@ -20,6 +20,11 @@ func TestMetricsEndpointIncludesSiteAndExporterState(t *testing.T) {
 		URL: site.URL, Up: true, StatusCode: 200, SSLDays: 42, Attempts: 2,
 		Duration: 250 * time.Millisecond, CheckedAt: time.Unix(100, 0),
 	})
+	cloudflareSite := Website{URL: "https://cloudflare.example", Cloudflare: true}
+	metrics.recordSite(cloudflareSite, &monitorState{status: "up"}, CheckResult{
+		URL: cloudflareSite.URL, Suppressed: true, Kind: "timeout", SSLDays: -1,
+		Attempts: 3, Duration: time.Second, CheckedAt: time.Unix(100, 0),
+	})
 	target := PrometheusTargetConfig{Name: "node-a", Type: "node_exporter"}
 	exporterState := &exporterState{status: "up", issues: make(map[string]*exporterIssueState)}
 	metrics.recordExporter(target, exporterState, ExporterResult{
@@ -38,6 +43,8 @@ func TestMetricsEndpointIncludesSiteAndExporterState(t *testing.T) {
 		`gomon_up 1`,
 		`gomon_site_up{url="https://example.com"} 1`,
 		`gomon_site_http_status_code{url="https://example.com"} 200`,
+		`gomon_site_up{url="https://cloudflare.example"} 1`,
+		`gomon_site_check_suppressed{url="https://cloudflare.example"} 1`,
 		`gomon_prometheus_target_up{target="node-a",type="node_exporter"} 1`,
 		`gomon_node_cpu_usage_percent{target="node-a"} 25`,
 	} {

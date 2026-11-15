@@ -8,6 +8,7 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 - Detects site downtime (HTTP errors, no response, non-HTML content)
 - Retries transient failures and confirms state changes across consecutive checks
 - Classifies failures as DNS, timeout, TLS, connection, HTTP, or content errors
+- Optional Cloudflare-aware policy ignores no-response network failures while still alerting on HTTP errors
 - Checks SSL certificate expiry against a configurable minimum days threshold
 - Sends a single combined alert when a site is down or SSL is expiring
 - Sends a recovery notification when a site comes back online
@@ -99,6 +100,7 @@ log_file: "monitor.log"
 
 websites:
   - url: "https://example.com"
+    cloudflare: true
     interval: 30s
     timeout: 15s
     attempts: 3
@@ -155,6 +157,7 @@ prometheus_targets:
 | `metrics.listen_address` | `0.0.0.0` | Address used when the metrics endpoint is enabled |
 | `log_file` | `monitor.log` | Path to the append-only status log |
 | `websites[].url` | — | Full URL or `host:port` (scheme inferred from `ssl`) |
+| `websites[].cloudflare` | `false` | Ignore no-response network failures for Cloudflare-fronted sites; HTTP/content errors still affect availability |
 | `websites[].interval` | `60s` | Check frequency — supports `s`, `m`, `h` suffixes |
 | `websites[].timeout` | `15s` | Timeout for each HTTP attempt |
 | `websites[].attempts` | `3` | Request attempts inside one check before that check fails |
@@ -202,7 +205,7 @@ http://HOST:PORT/metrics/me
 Important exported series include:
 
 - `gomon_up` and Go/process runtime metrics
-- `gomon_site_up`, `gomon_site_alerting`, check duration, attempts, HTTP status, and SSL days
+- `gomon_site_up`, `gomon_site_alerting`, `gomon_site_check_suppressed`, check duration, attempts, HTTP status, and SSL days
 - `gomon_prometheus_target_up` and active alert count
 - `gomon_node_cpu_usage_percent`, memory, load, filesystem usage, disk I/O, temperature, and collector health
 

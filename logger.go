@@ -10,6 +10,7 @@ import (
 )
 
 // Log line format: timestamp|UP|url|statusMsg|SSL:45|KIND:http|DURATION_MS:123|ATTEMPTS:2|REMOTE:1.2.3.4:443
+// Status can be UP, DOWN, or IGNORED. IGNORED retains diagnostics without affecting uptime.
 const logDelimiter = "|"
 
 type Logger struct {
@@ -36,7 +37,9 @@ func (l *Logger) write(result CheckResult) {
 	defer l.mu.Unlock()
 
 	status := "UP"
-	if !result.Up {
+	if result.Suppressed {
+		status = "IGNORED"
+	} else if !result.Up {
 		status = "DOWN"
 	}
 

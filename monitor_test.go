@@ -82,3 +82,45 @@ func TestSSLAlertTags(t *testing.T) {
 		}
 	}
 }
+
+func TestCloudflareNetworkFailuresAreNeutralButHTTPErrorsAlert(t *testing.T) {
+	site := Website{
+		URL:               "https://example.com",
+		Cloudflare:        true,
+		FailureThreshold:  2,
+		RecoveryThreshold: 2,
+	}
+	state := &monitorState{status: "up"}
+	now := time.Now().UTC()
+	timeout := CheckResult{URL: site.URL, Kind: "timeout", StatusMsg: "awaiting headers", CheckedAt: now}
+
+	if !shouldSuppressCloudflareNetworkFailure(site, timeout) {
+		t.Fatal("expected a no-response Cloudflare timeout to be suppressed")
+	}
+	if messages, recovered := updateMonitorState(site, state, timeout, false); len(messages) != 0 || recovered {
+		t.Fatalf("suppressed timeout changed alert state: messages=%v recovered=%v", messages, recovered)
+	}
+	if state.status != "up" || state.consecutiveFailures != 0 {
+		t.Fatalf("suppressed timeout changed monitor state: %+v", state)
+	}
+
+	httpFailure := CheckResult{URL: site.URL, Kind: "http", StatusCode: 503, StatusMsg: "HTTP 503", CheckedAt: now.Add(time.Minute)}
+	if shouldSuppressCloudflareNetworkFailure(site, httpFailure) {
+		t.Fatal("HTTP errors must not be suppressed")
+	}
+	if messages, _ := updateMonitorState(site, state, httpFailure, false); len(messages) != 0 {
+		t.Fatalf("first HTTP failure must debounce: %v", messages)
+	}
+	httpFailure.CheckedAt = now.Add(2 * time.Minute)
+	if messages, _ := updateMonitorState(site, state, httpFailure, false); len(messages) != 1 || !strings.Contains(messages[0], "HTTP 503") {
+		t.Fatalf("second HTTP failure must alert: %v", messages)
+	} else if !strings.Contains(messages[0], "#cloudflare") {
+		t.Fatalf("Cloudflare HTTP alert lacks tag: %s", messages[0])
+	}
+
+	timeout.Suppressed = true
+	timeout.CheckedAt = now.Add(3 * time.Minute)
+	if messages, recovered := updateMonitorState(site, state, timeout, false); len(messages) != 0 || recovered || state.status != "down" {
+		t.Fatalf("a suppressed timeout must not recover an HTTP outage: messages=%v recovered=%v state=%+v", messages, recovered, state)
+	}
+}

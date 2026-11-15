@@ -17,7 +17,8 @@ import (
 type CheckResult struct {
 	URL        string
 	Up         bool
-	SSLDays    int // -1 if SSL not checked
+	Suppressed bool // excluded from availability state by a configured policy
+	SSLDays    int  // -1 if SSL not checked
 	StatusMsg  string
 	CheckedAt  time.Time
 	Kind       string

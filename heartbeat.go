@@ -44,6 +44,7 @@ func buildReport(cfg *Config, logger *Logger) (string, error) {
 	type stat struct {
 		up      int
 		down    int
+		ignored int
 		lastSSL int
 	}
 
@@ -58,10 +59,13 @@ func buildReport(cfg *Config, logger *Logger) (string, error) {
 			st = &stat{lastSSL: -1}
 			stats[e.URL] = st
 		}
-		if e.Status == "UP" {
+		switch e.Status {
+		case "UP":
 			st.up++
-		} else {
+		case "DOWN":
 			st.down++
+		case "IGNORED":
+			st.ignored++
 		}
 		if e.SSLDays >= 0 {
 			st.lastSSL = e.SSLDays
@@ -98,6 +102,9 @@ func buildReport(cfg *Config, logger *Logger) (string, error) {
 		sb.WriteString(fmt.Sprintf("   Uptime: %.1f%% (%d/%d checks)\n", uptime, st.up, total))
 		if st.lastSSL >= 0 {
 			sb.WriteString(fmt.Sprintf("   SSL: %d days remaining\n", st.lastSSL))
+		}
+		if st.ignored > 0 {
+			sb.WriteString(fmt.Sprintf("   Ignored network checks: %d\n", st.ignored))
 		}
 		sb.WriteString("\n")
 	}

@@ -48,6 +48,7 @@ type MetricsConfig struct {
 
 type Website struct {
 	URL               string        `yaml:"url"`
+	Cloudflare        bool          `yaml:"cloudflare"`
 	Interval          time.Duration `yaml:"interval"`
 	Timeout           time.Duration `yaml:"timeout"`
 	Attempts          int           `yaml:"attempts"`

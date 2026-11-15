@@ -34,6 +34,7 @@ type monitorMetrics struct {
 	siteAttempts             *prometheus.GaugeVec
 	siteSSLDays              *prometheus.GaugeVec
 	siteConsecutiveFailures  *prometheus.GaugeVec
+	siteCheckSuppressed      *prometheus.GaugeVec
 	exporterUp               *prometheus.GaugeVec
 	exporterAlerting         *prometheus.GaugeVec
 	exporterScrapeDuration   *prometheus.GaugeVec
@@ -62,7 +63,7 @@ func newMonitorMetrics() *monitorMetrics {
 		}, []string{"version", "commit", "go_version"}),
 		siteUp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "gomon_site_up",
-			Help: "Whether the most recent website check succeeded.",
+			Help: "Effective website availability after applying configured suppression policies.",
 		}, []string{"url"}),
 		siteAlerting: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "gomon_site_alerting",
@@ -91,6 +92,10 @@ func newMonitorMetrics() *monitorMetrics {
 		siteConsecutiveFailures: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "gomon_site_consecutive_failures",
 			Help: "Current number of consecutive failed website checks.",
+		}, []string{"url"}),
+		siteCheckSuppressed: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "gomon_site_check_suppressed",
+			Help: "Whether the most recent website failure was excluded from availability state by policy.",
 		}, []string{"url"}),
 		exporterUp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "gomon_prometheus_target_up",
@@ -157,6 +162,7 @@ func newMonitorMetrics() *monitorMetrics {
 		m.siteAttempts,
 		m.siteSSLDays,
 		m.siteConsecutiveFailures,
+		m.siteCheckSuppressed,
 		m.exporterUp,
 		m.exporterAlerting,
 		m.exporterScrapeDuration,
@@ -180,7 +186,7 @@ func newMonitorMetrics() *monitorMetrics {
 
 func (m *monitorMetrics) recordSite(site Website, state *monitorState, result CheckResult) {
 	up := 0.0
-	if result.Up {
+	if result.Up || (result.Suppressed && state.status != "down") {
 		up = 1
 	}
 	alerting := 0.0
@@ -195,6 +201,7 @@ func (m *monitorMetrics) recordSite(site Website, state *monitorState, result Ch
 	m.siteAttempts.WithLabelValues(site.URL).Set(float64(result.Attempts))
 	m.siteSSLDays.WithLabelValues(site.URL).Set(float64(result.SSLDays))
 	m.siteConsecutiveFailures.WithLabelValues(site.URL).Set(float64(state.consecutiveFailures))
+	m.siteCheckSuppressed.WithLabelValues(site.URL).Set(boolFloat(result.Suppressed))
 }
 
 func (m *monitorMetrics) recordExporter(target PrometheusTargetConfig, state *exporterState, result ExporterResult) {

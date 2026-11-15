@@ -84,3 +84,22 @@ prometheus_targets:
 		t.Fatal("expected conflicting Authorization settings to be rejected")
 	}
 }
+
+func TestLoadConfigCloudflareWebsitePolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`
+websites:
+  - url: https://example.com
+    cloudflare: true
+`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Websites) != 1 || !cfg.Websites[0].Cloudflare {
+		t.Fatalf("expected Cloudflare policy to be enabled: %+v", cfg.Websites)
+	}
+}

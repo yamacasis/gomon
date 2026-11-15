@@ -27,6 +27,7 @@ log_file: "monitor.log"
 
 websites:
   - url: "https://example.com"
+    cloudflare: true          # ignore no-response network failures; HTTP errors still alert
     interval: 30s
     timeout: 15s
     attempts: 3               # retry transient failures within one check
