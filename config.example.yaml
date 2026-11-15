@@ -17,6 +17,11 @@ log_file: "monitor.log"
 websites:
   - url: "https://example.com"
     interval: 30s
+    timeout: 15s
+    attempts: 3               # retry transient failures within one check
+    retry_delay: 1s
+    failure_threshold: 2      # alert after 2 failed checks in a row
+    recovery_threshold: 2     # recover after 2 successful checks in a row
     ssl: true
     ssl_min_days: 30
 

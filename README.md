@@ -6,6 +6,8 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 
 - Monitors multiple websites on independent intervals
 - Detects site downtime (HTTP errors, no response, non-HTML content)
+- Retries transient failures and confirms state changes across consecutive checks
+- Classifies failures as DNS, timeout, TLS, connection, HTTP, or content errors
 - Checks SSL certificate expiry against a configurable minimum days threshold
 - Sends a single combined alert when a site is down or SSL is expiring
 - Sends a recovery notification when a site comes back online
@@ -85,6 +87,11 @@ log_file: "monitor.log"
 websites:
   - url: "https://example.com"
     interval: 30s
+    timeout: 15s
+    attempts: 3
+    retry_delay: 1s
+    failure_threshold: 2
+    recovery_threshold: 2
     ssl: true
     ssl_min_days: 30
 
@@ -112,6 +119,11 @@ websites:
 | `log_file` | `monitor.log` | Path to the append-only status log |
 | `websites[].url` | — | Full URL or `host:port` (scheme inferred from `ssl`) |
 | `websites[].interval` | `60s` | Check frequency — supports `s`, `m`, `h` suffixes |
+| `websites[].timeout` | `15s` | Timeout for each HTTP attempt |
+| `websites[].attempts` | `3` | Request attempts inside one check before that check fails |
+| `websites[].retry_delay` | `1s` | Delay between request attempts |
+| `websites[].failure_threshold` | `2` | Consecutive failed checks required before a Down alert |
+| `websites[].recovery_threshold` | `2` | Consecutive successful checks required before recovery |
 | `websites[].ssl` | `false` | Whether to check SSL certificate expiry |
 | `websites[].ssl_min_days` | `30` | Alert threshold: days until cert expiry |
 
@@ -190,7 +202,11 @@ This makes it compatible with Slack incoming webhooks, Discord webhooks, ntfy.sh
 🚨 Alert: example.com
 
 🔴 Site is DOWN
-Error: connection refused
+Cause: TIMEOUT
+Error: request timed out
+Confirmed: 2 consecutive failed checks; 3 request attempt(s) in the last check
+Duration: 15s
+Checked: 2026-06-21T10:00:00Z
 
 ⚠️ SSL Certificate Expiring
 Days remaining: 8 (min allowed: 30)
@@ -199,7 +215,11 @@ Days remaining: 8 (min allowed: 30)
 **Recovery:**
 ```
 ✅ Site Recovered
-`example.com` is back online
+`example.com` is stable after 2 consecutive successful checks
+Outage duration: 2m1s
+Current status: HTTP 200
+Previous cause: TIMEOUT — request timed out
+Checked: 2026-06-21T10:02:01Z
 ```
 
 **Daily heartbeat (sent at configured time):**
@@ -216,20 +236,21 @@ Days remaining: 8 (min allowed: 30)
 ```
 
 Alert logic:
-- **Down alert** fires once on state change, not on every failed check.
+- A check retries transient failures up to `attempts` times.
+- **Down alert** fires only after `failure_threshold` consecutive failed checks.
+- **Recovery** fires only after `recovery_threshold` consecutive successful checks.
 - **SSL alert** fires once when days drop below the threshold and resets on restart.
-- **Recovery** fires once when a previously down site becomes reachable.
 
 ## Log File Format
 
 One line per check, pipe-delimited:
 
 ```
-2026-06-21T10:00:00Z|UP|example.com|HTTP 200|SSL:42
-2026-06-21T10:00:30Z|DOWN|api.example.com|connection refused
+2026-06-21T10:00:00Z|UP|example.com|HTTP 200|SSL:42|DURATION_MS:184|ATTEMPTS:1|REMOTE:203.0.113.10:443
+2026-06-21T10:00:30Z|DOWN|api.example.com|connection refused|KIND:connection|DURATION_MS:15002|ATTEMPTS:3
 ```
 
-Fields: `timestamp | UP/DOWN | url | status message | SSL:<days> (optional)`
+Fields: `timestamp | UP/DOWN | url | status message` followed by optional diagnostic fields: `SSL`, `KIND`, `DURATION_MS`, `ATTEMPTS`, and `REMOTE`.
 
 The daily heartbeat reads this file to build its report.
 

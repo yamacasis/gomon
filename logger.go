@@ -9,8 +9,7 @@ import (
 	"time"
 )
 
-// Log line format: timestamp|UP|url|statusMsg
-// With SSL:       timestamp|UP|url|statusMsg|SSL:45
+// Log line format: timestamp|UP|url|statusMsg|SSL:45|KIND:http|DURATION_MS:123|ATTEMPTS:2|REMOTE:1.2.3.4:443
 const logDelimiter = "|"
 
 type Logger struct {
@@ -44,11 +43,18 @@ func (l *Logger) write(result CheckResult) {
 	line := fmt.Sprintf("%s|%s|%s|%s",
 		result.CheckedAt.Format(time.RFC3339),
 		status,
-		result.URL,
-		result.StatusMsg,
+		sanitizeLogField(result.URL),
+		sanitizeLogField(result.StatusMsg),
 	)
 	if result.SSLDays >= 0 {
 		line += fmt.Sprintf("|SSL:%d", result.SSLDays)
+	}
+	if result.Kind != "" {
+		line += "|KIND:" + sanitizeLogField(result.Kind)
+	}
+	line += fmt.Sprintf("|DURATION_MS:%d|ATTEMPTS:%d", result.Duration.Milliseconds(), result.Attempts)
+	if result.RemoteAddr != "" {
+		line += "|REMOTE:" + sanitizeLogField(result.RemoteAddr)
 	}
 	line += "\n"
 
@@ -65,11 +71,15 @@ func (l *Logger) close() {
 
 // LogEntry holds a parsed log line.
 type LogEntry struct {
-	Timestamp time.Time
-	Status    string
-	URL       string
-	Msg       string
-	SSLDays   int // -1 if not present
+	Timestamp  time.Time
+	Status     string
+	URL        string
+	Msg        string
+	SSLDays    int // -1 if not present
+	Kind       string
+	Duration   time.Duration
+	Attempts   int
+	RemoteAddr string
 }
 
 func (l *Logger) readDate(date string) ([]LogEntry, error) {
@@ -93,7 +103,7 @@ func (l *Logger) readDate(date string) ([]LogEntry, error) {
 		if !strings.HasPrefix(line, date) {
 			continue
 		}
-		parts := strings.SplitN(line, logDelimiter, 5)
+		parts := strings.Split(line, logDelimiter)
 		if len(parts) < 4 {
 			continue
 		}
@@ -108,10 +118,29 @@ func (l *Logger) readDate(date string) ([]LogEntry, error) {
 			Msg:       parts[3],
 			SSLDays:   -1,
 		}
-		if len(parts) == 5 && strings.HasPrefix(parts[4], "SSL:") {
-			fmt.Sscanf(parts[4], "SSL:%d", &e.SSLDays)
+		for _, field := range parts[4:] {
+			switch {
+			case strings.HasPrefix(field, "SSL:"):
+				fmt.Sscanf(field, "SSL:%d", &e.SSLDays)
+			case strings.HasPrefix(field, "KIND:"):
+				e.Kind = strings.TrimPrefix(field, "KIND:")
+			case strings.HasPrefix(field, "DURATION_MS:"):
+				var milliseconds int64
+				fmt.Sscanf(field, "DURATION_MS:%d", &milliseconds)
+				e.Duration = time.Duration(milliseconds) * time.Millisecond
+			case strings.HasPrefix(field, "ATTEMPTS:"):
+				fmt.Sscanf(field, "ATTEMPTS:%d", &e.Attempts)
+			case strings.HasPrefix(field, "REMOTE:"):
+				e.RemoteAddr = strings.TrimPrefix(field, "REMOTE:")
+			}
 		}
 		entries = append(entries, e)
 	}
 	return entries, scanner.Err()
+}
+
+func sanitizeLogField(value string) string {
+	value = strings.ReplaceAll(value, "|", "/")
+	value = strings.ReplaceAll(value, "\n", " ")
+	return strings.ReplaceAll(value, "\r", " ")
 }
