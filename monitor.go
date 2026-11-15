@@ -60,7 +60,7 @@ func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Lo
 		log.Printf("[CHECK] RECOVERED %s after %d consecutive successful checks", site.URL, site.RecoveryThreshold)
 	}
 	for _, message := range messages {
-		notify(notifiers, message)
+		notify(notifiers, message, site.Tags...)
 	}
 }
 
@@ -133,6 +133,7 @@ func shouldSuppressCloudflareNetworkFailure(site Website, result CheckResult) bo
 func buildAlertMsg(site Website, result CheckResult, isDown, sslExpiring bool, failureThreshold int) string {
 	var sb strings.Builder
 	tags := []string{"webcheck", siteAlertTag(site.URL)}
+	tags = append(tags, normalizeRoutingTags(site.Tags)...)
 	if site.Cloudflare {
 		tags = append(tags, "cloudflare")
 	}
@@ -175,6 +176,7 @@ func buildRecoveryMsg(site Website, state *monitorState, result CheckResult, rec
 	}
 	sb.WriteString(fmt.Sprintf("\nChecked: %s", result.CheckedAt.Format(time.RFC3339)))
 	tags := []string{"webcheck", "recovery", siteAlertTag(site.URL)}
+	tags = append(tags, normalizeRoutingTags(site.Tags)...)
 	if site.Cloudflare {
 		tags = append(tags, "cloudflare")
 	}

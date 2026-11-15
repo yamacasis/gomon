@@ -133,7 +133,7 @@ func doPrometheusCheck(target PrometheusTargetConfig, state *exporterState, noti
 			target.Name, target.Type, result.ErrorKind, result.Duration.Round(time.Millisecond), result.ErrorMessage)
 	}
 	for _, message := range messages {
-		notify(notifiers, message)
+		notify(notifiers, message, target.Tags...)
 	}
 }
 
@@ -583,7 +583,9 @@ func updateExporterState(target PrometheusTargetConfig, state *exporterState, re
 func buildExporterDownMessage(target PrometheusTargetConfig, result ExporterResult) string {
 	message := fmt.Sprintf("🚨 *Prometheus Target Down*\n`%s` (%s)\nCause: %s\nError: %s\nConfirmed: %d consecutive failed scrapes\nChecked: %s",
 		target.Name, target.Type, displayKind(result.ErrorKind), result.ErrorMessage, target.FailureThreshold, result.CheckedAt.Format(time.RFC3339))
-	return withAlertTags(message, "prometheus", target.Type, "down", result.ErrorKind, target.Name)
+	tags := []string{"prometheus", target.Type, "down", result.ErrorKind, target.Name}
+	tags = append(tags, normalizeRoutingTags(target.Tags)...)
+	return withAlertTags(message, tags...)
 }
 
 func buildExporterRecoveryMessage(target PrometheusTargetConfig, state *exporterState, result ExporterResult) string {
@@ -593,7 +595,9 @@ func buildExporterRecoveryMessage(target PrometheusTargetConfig, state *exporter
 	}
 	message := fmt.Sprintf("✅ *Prometheus Target Recovered*\n`%s` (%s)\nStable after %d successful scrapes\nOutage duration: %s\nPrevious error: %s\nChecked: %s",
 		target.Name, target.Type, target.RecoveryThreshold, duration, state.lastError, result.CheckedAt.Format(time.RFC3339))
-	return withAlertTags(message, "prometheus", target.Type, "recovery", target.Name)
+	tags := []string{"prometheus", target.Type, "recovery", target.Name}
+	tags = append(tags, normalizeRoutingTags(target.Tags)...)
+	return withAlertTags(message, tags...)
 }
 
 func buildExporterIssueMessage(target PrometheusTargetConfig, checkedAt time.Time, issues []ExporterIssue) string {
@@ -618,6 +622,7 @@ func buildExporterIssueRecoveryMessage(target PrometheusTargetConfig, checkedAt 
 
 func exporterIssueAlertTags(target PrometheusTargetConfig, issues []ExporterIssue, state string) []string {
 	tags := []string{"prometheus", target.Type, "resource", state, target.Name}
+	tags = append(tags, normalizeRoutingTags(target.Tags)...)
 	for _, issue := range issues {
 		tags = append(tags, issue.Kind)
 		category := issue.Key

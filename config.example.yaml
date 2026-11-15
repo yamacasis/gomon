@@ -1,4 +1,6 @@
 telegram:
+  name: "default-telegram"
+  tags: ["general"]
   bot_token: "YOUR_BOT_TOKEN_HERE"
   chat_id: "YOUR_CHAT_ID_HERE"
   api_url: "https://api.telegram.org"   # change to your proxy URL if needed
@@ -6,9 +8,24 @@ telegram:
 
 # Optional Bale messenger bot. chat_id may be a user, group, or channel ID.
 bale:
+  name: "default-bale"
+  tags: ["general"]
   bot_token: ""
   chat_id: ""
   api_url: "https://tapi.bale.ai"
+
+# Additional routed outputs. An alert is delivered when any channel tag matches
+# any tag on the website or prometheus target that generated it.
+# telegram_channels:
+#   - name: "infrastructure-team"
+#     tags: ["infra", "critical"]
+#     bot_token: "ANOTHER_TELEGRAM_BOT_TOKEN"
+#     chat_id: "ANOTHER_TELEGRAM_CHAT_ID"
+# bale_channels:
+#   - name: "website-team"
+#     tags: ["web"]
+#     bot_token: "ANOTHER_BALE_BOT_TOKEN"
+#     chat_id: "ANOTHER_BALE_CHAT_ID"
 
 webhook:
   url: ""                               # leave empty to disable
@@ -27,6 +44,7 @@ log_file: "monitor.log"
 
 websites:
   - url: "https://example.com"
+    tags: ["general"]
     cloudflare: true          # ignore no-response network failures; HTTP errors still alert
     interval: 30s
     timeout: 15s
@@ -48,6 +66,7 @@ websites:
 
 prometheus_targets:
   - name: "server-01"
+    tags: ["general"]
     url: "http://10.0.0.10:9100/metrics"
     type: "node_exporter"
     interval: 1m

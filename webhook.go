@@ -17,6 +17,10 @@ func newWebhook(cfg WebhookConfig) *Webhook {
 	return &Webhook{cfg: cfg}
 }
 
+func (w *Webhook) routingTags() []string {
+	return []string{"general"}
+}
+
 func (w *Webhook) send(text string) error {
 	if w.cfg.URL == "" {
 		return nil

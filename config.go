@@ -11,16 +11,20 @@ import (
 )
 
 type TelegramConfig struct {
-	BotToken   string `yaml:"bot_token"`
-	ChatID     string `yaml:"chat_id"`
-	APIURL     string `yaml:"api_url"`     // default: https://api.telegram.org
-	SocksProxy string `yaml:"socks_proxy"` // e.g. socks5://user:pass@host:1080
+	Name       string   `yaml:"name"`
+	Tags       []string `yaml:"tags"`
+	BotToken   string   `yaml:"bot_token"`
+	ChatID     string   `yaml:"chat_id"`
+	APIURL     string   `yaml:"api_url"`     // default: https://api.telegram.org
+	SocksProxy string   `yaml:"socks_proxy"` // e.g. socks5://user:pass@host:1080
 }
 
 type BaleConfig struct {
-	BotToken string `yaml:"bot_token"`
-	ChatID   string `yaml:"chat_id"`
-	APIURL   string `yaml:"api_url"` // default: https://tapi.bale.ai
+	Name     string   `yaml:"name"`
+	Tags     []string `yaml:"tags"`
+	BotToken string   `yaml:"bot_token"`
+	ChatID   string   `yaml:"chat_id"`
+	APIURL   string   `yaml:"api_url"` // default: https://tapi.bale.ai
 }
 
 type WebhookConfig struct {
@@ -29,11 +33,13 @@ type WebhookConfig struct {
 }
 
 type Config struct {
-	Telegram  TelegramConfig `yaml:"telegram"`
-	Bale      BaleConfig     `yaml:"bale"`
-	Webhook   WebhookConfig  `yaml:"webhook"`
-	Metrics   MetricsConfig  `yaml:"metrics"`
-	Heartbeat struct {
+	Telegram         TelegramConfig   `yaml:"telegram"`
+	TelegramChannels []TelegramConfig `yaml:"telegram_channels"`
+	Bale             BaleConfig       `yaml:"bale"`
+	BaleChannels     []BaleConfig     `yaml:"bale_channels"`
+	Webhook          WebhookConfig    `yaml:"webhook"`
+	Metrics          MetricsConfig    `yaml:"metrics"`
+	Heartbeat        struct {
 		Time string `yaml:"time"` // "HH:MM" 24-hour format
 	} `yaml:"heartbeat"`
 	LogFile           string                   `yaml:"log_file"`
@@ -48,6 +54,7 @@ type MetricsConfig struct {
 
 type Website struct {
 	URL               string        `yaml:"url"`
+	Tags              []string      `yaml:"tags"`
 	Cloudflare        bool          `yaml:"cloudflare"`
 	Interval          time.Duration `yaml:"interval"`
 	Timeout           time.Duration `yaml:"timeout"`
@@ -61,6 +68,7 @@ type Website struct {
 
 type PrometheusTargetConfig struct {
 	Name              string                 `yaml:"name"`
+	Tags              []string               `yaml:"tags"`
 	URL               string                 `yaml:"url"`
 	Type              string                 `yaml:"type"`
 	BasicAuth         *BasicAuthConfig       `yaml:"basic_auth"`
@@ -124,7 +132,16 @@ func loadConfig(path string) (*Config, error) {
 	if cfg.Metrics.Port > 0 && cfg.Metrics.ListenAddress == "" {
 		cfg.Metrics.ListenAddress = "0.0.0.0"
 	}
+	cfg.Telegram.Tags = normalizeRoutingTags(cfg.Telegram.Tags)
+	cfg.Bale.Tags = normalizeRoutingTags(cfg.Bale.Tags)
+	if err := normalizeTelegramChannels(cfg.TelegramChannels); err != nil {
+		return nil, err
+	}
+	if err := normalizeBaleChannels(cfg.BaleChannels); err != nil {
+		return nil, err
+	}
 	for i := range cfg.Websites {
+		cfg.Websites[i].Tags = normalizeRoutingTags(cfg.Websites[i].Tags)
 		if cfg.Websites[i].Interval <= 0 {
 			cfg.Websites[i].Interval = defaultCheckInterval
 		}
@@ -153,6 +170,7 @@ func loadConfig(path string) (*Config, error) {
 	seenTargetNames := make(map[string]struct{}, len(cfg.PrometheusTargets))
 	for i := range cfg.PrometheusTargets {
 		target := &cfg.PrometheusTargets[i]
+		target.Tags = normalizeRoutingTags(target.Tags)
 		target.Name = strings.TrimSpace(target.Name)
 		if target.Name == "" {
 			return nil, fmt.Errorf("prometheus_targets[%d].name is required", i)
@@ -200,6 +218,46 @@ func loadConfig(path string) (*Config, error) {
 		applyNodeExporterThresholdDefaults(&target.Thresholds)
 	}
 	return &cfg, nil
+}
+
+func normalizeTelegramChannels(channels []TelegramConfig) error {
+	seen := make(map[string]struct{}, len(channels))
+	for i := range channels {
+		channel := &channels[i]
+		channel.Name = strings.TrimSpace(channel.Name)
+		if channel.Name == "" {
+			channel.Name = fmt.Sprintf("telegram-%d", i+1)
+		}
+		if _, duplicate := seen[channel.Name]; duplicate {
+			return fmt.Errorf("telegram channel name %q is duplicated", channel.Name)
+		}
+		seen[channel.Name] = struct{}{}
+		if strings.TrimSpace(channel.BotToken) == "" || strings.TrimSpace(channel.ChatID) == "" {
+			return fmt.Errorf("telegram channel %q requires bot_token and chat_id", channel.Name)
+		}
+		channel.Tags = normalizeRoutingTags(channel.Tags)
+	}
+	return nil
+}
+
+func normalizeBaleChannels(channels []BaleConfig) error {
+	seen := make(map[string]struct{}, len(channels))
+	for i := range channels {
+		channel := &channels[i]
+		channel.Name = strings.TrimSpace(channel.Name)
+		if channel.Name == "" {
+			channel.Name = fmt.Sprintf("bale-%d", i+1)
+		}
+		if _, duplicate := seen[channel.Name]; duplicate {
+			return fmt.Errorf("bale channel name %q is duplicated", channel.Name)
+		}
+		seen[channel.Name] = struct{}{}
+		if strings.TrimSpace(channel.BotToken) == "" || strings.TrimSpace(channel.ChatID) == "" {
+			return fmt.Errorf("bale channel %q requires bot_token and chat_id", channel.Name)
+		}
+		channel.Tags = normalizeRoutingTags(channel.Tags)
+	}
+	return nil
 }
 
 func normalizePrometheusURL(raw string) (string, error) {

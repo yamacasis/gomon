@@ -22,10 +22,15 @@ func newBale(cfg BaleConfig) *Bale {
 	if cfg.APIURL == "" {
 		cfg.APIURL = defaultBaleAPI
 	}
+	cfg.Tags = normalizeRoutingTags(cfg.Tags)
 	return &Bale{
 		cfg:    cfg,
 		client: &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+func (b *Bale) routingTags() []string {
+	return b.cfg.Tags
 }
 
 func (b *Bale) send(text string) error {

@@ -46,6 +46,88 @@ prometheus_targets:
 	if target.Thresholds.CPUPercent != 90 || target.Thresholds.DiskIOPercent != 95 {
 		t.Fatalf("unexpected node exporter thresholds: %+v", target.Thresholds)
 	}
+	if len(target.Tags) != 1 || target.Tags[0] != "general" {
+		t.Fatalf("expected default general routing tag, got %v", target.Tags)
+	}
+}
+
+func TestLoadConfigMultipleTaggedChannels(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`
+telegram_channels:
+  - name: infrastructure
+    tags: [infra, Critical]
+    bot_token: telegram-token
+    chat_id: telegram-chat
+bale_channels:
+  - name: websites
+    tags: [web]
+    bot_token: bale-token
+    chat_id: bale-chat
+websites:
+  - url: https://example.com
+    tags: [web, General]
+`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.TelegramChannels) != 1 || len(cfg.BaleChannels) != 1 {
+		t.Fatalf("unexpected channel counts: telegram=%d bale=%d", len(cfg.TelegramChannels), len(cfg.BaleChannels))
+	}
+	if got := cfg.TelegramChannels[0].Tags; len(got) != 2 || got[0] != "infra" || got[1] != "critical" {
+		t.Fatalf("unexpected normalized Telegram tags: %v", got)
+	}
+	if got := cfg.Websites[0].Tags; len(got) != 2 || got[0] != "web" || got[1] != "general" {
+		t.Fatalf("unexpected website tags: %v", got)
+	}
+	notifiers, err := buildNotifiers(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notifiers) != 2 {
+		t.Fatalf("expected two tagged notifiers, got %d", len(notifiers))
+	}
+}
+
+func TestLoadConfigLegacyOutputsDefaultToGeneral(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`
+telegram:
+  bot_token: telegram-token
+  chat_id: telegram-chat
+bale:
+  bot_token: bale-token
+  chat_id: bale-chat
+websites:
+  - url: https://example.com
+`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tags := range map[string][]string{
+		"telegram": cfg.Telegram.Tags,
+		"bale":     cfg.Bale.Tags,
+		"website":  cfg.Websites[0].Tags,
+	} {
+		if len(tags) != 1 || tags[0] != "general" {
+			t.Fatalf("expected %s to default to general, got %v", name, tags)
+		}
+	}
+	notifiers, err := buildNotifiers(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notifiers) != 2 {
+		t.Fatalf("expected two legacy notifiers, got %d", len(notifiers))
+	}
 }
 
 func TestLoadConfigRejectsBasicAuthWithoutUsername(t *testing.T) {

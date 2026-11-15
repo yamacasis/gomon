@@ -17,6 +17,7 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 - Exposes Gomon, website, and exporter health at `/metrics/me` for Prometheus
 - Scrapes remote `node_exporter` endpoints and alerts on CPU, RAM, disk, I/O, load, temperature, collector, RAID, and SMART health
 - Adds searchable `#gomon` and event-specific tags to every notification
+- Routes tagged website/exporter alerts to any number of tagged Telegram and Bale channels
 - **Telegram notifications** with optional custom/proxied API URL
 - **Bale notifications** through its Telegram-compatible Bot API
 - **Generic webhook notifications** with custom headers for any HTTP endpoint
@@ -75,14 +76,30 @@ Copy `config.example.yaml` to `config.yaml` and edit:
 
 ```yaml
 telegram:
+  name: "default-telegram"
+  tags: ["general"]
   bot_token: "YOUR_BOT_TOKEN"
   chat_id: "YOUR_CHAT_ID"
   api_url: "https://api.telegram.org"  # change for proxy
 
 bale:
+  name: "default-bale"
+  tags: ["general"]
   bot_token: "YOUR_BALE_BOT_TOKEN"
   chat_id: "YOUR_BALE_CHANNEL_OR_CHAT_ID"
   api_url: "https://tapi.bale.ai"
+
+telegram_channels:
+  - name: "infrastructure-team"
+    tags: ["infra", "critical"]
+    bot_token: "ANOTHER_TELEGRAM_BOT_TOKEN"
+    chat_id: "ANOTHER_TELEGRAM_CHAT_ID"
+
+bale_channels:
+  - name: "website-team"
+    tags: ["web"]
+    bot_token: "ANOTHER_BALE_BOT_TOKEN"
+    chat_id: "ANOTHER_BALE_CHAT_ID"
 
 webhook:
   url: "https://your-server.com/hook"  # leave empty to disable
@@ -100,6 +117,7 @@ log_file: "monitor.log"
 
 websites:
   - url: "https://example.com"
+    tags: ["general", "web"]
     cloudflare: true
     interval: 30s
     timeout: 15s
@@ -121,6 +139,7 @@ websites:
 
 prometheus_targets:
   - name: "server-01"
+    tags: ["general", "infra"]
     url: "http://10.0.0.10:9100/metrics"
     type: "node_exporter"
     interval: 1m
@@ -145,11 +164,17 @@ prometheus_targets:
 |---|---|---|
 | `telegram.bot_token` | — | Telegram bot token from @BotFather |
 | `telegram.chat_id` | — | Target chat ID (use @userinfobot to find yours) |
+| `telegram.name` | — | Human-readable output name |
+| `telegram.tags` | `[general]` | Routing tags accepted by the legacy/default Telegram output |
 | `telegram.api_url` | `https://api.telegram.org` | Telegram API base URL — set to a proxy for restricted networks |
 | `telegram.socks_proxy` | — | SOCKS5 proxy for Telegram requests, e.g. `socks5://user:pass@host:1080` |
+| `telegram_channels[]` | — | Additional Telegram outputs, each with `name`, `tags`, `bot_token`, `chat_id`, and optional API/proxy settings |
 | `bale.bot_token` | — | Bale bot token; leave empty to disable Bale notifications |
 | `bale.chat_id` | — | Bale user, group, or channel identifier receiving notifications |
+| `bale.name` | — | Human-readable output name |
+| `bale.tags` | `[general]` | Routing tags accepted by the legacy/default Bale output |
 | `bale.api_url` | `https://tapi.bale.ai` | Bale Telegram-compatible Bot API base URL |
+| `bale_channels[]` | — | Additional Bale outputs, each with `name`, `tags`, `bot_token`, `chat_id`, and optional `api_url` |
 | `webhook.url` | — | HTTP endpoint to POST alerts to; leave empty to disable |
 | `webhook.headers` | — | Key/value map of HTTP headers (e.g. `Authorization`) |
 | `heartbeat.time` | `08:00` | Daily report time (HH:MM, 24-hour, local timezone) |
@@ -157,6 +182,7 @@ prometheus_targets:
 | `metrics.listen_address` | `0.0.0.0` | Address used when the metrics endpoint is enabled |
 | `log_file` | `monitor.log` | Path to the append-only status log |
 | `websites[].url` | — | Full URL or `host:port` (scheme inferred from `ssl`) |
+| `websites[].tags` | `[general]` | Tags used to route this site's notifications |
 | `websites[].cloudflare` | `false` | Ignore no-response network failures for Cloudflare-fronted sites; HTTP/content errors still affect availability |
 | `websites[].interval` | `60s` | Check frequency — supports `s`, `m`, `h` suffixes |
 | `websites[].timeout` | `15s` | Timeout for each HTTP attempt |
@@ -167,6 +193,7 @@ prometheus_targets:
 | `websites[].ssl` | `false` | Whether to check SSL certificate expiry |
 | `websites[].ssl_min_days` | `30` | Alert threshold: days until cert expiry |
 | `prometheus_targets[].name` | — | Unique label used for the monitored server |
+| `prometheus_targets[].tags` | `[general]` | Tags used to route this exporter's notifications |
 | `prometheus_targets[].url` | — | Prometheus exposition URL; `/metrics` is added when the URL has no path |
 | `prometheus_targets[].type` | `node_exporter` | Exporter-specific analyzer; currently `node_exporter` |
 | `prometheus_targets[].basic_auth` | — | Optional HTTP Basic Auth credentials (`username` and `password`) |
@@ -181,6 +208,12 @@ Node exporter threshold defaults are CPU `90%`, RAM `90%`, filesystem `90%`, dis
 Telegram, Bale, and webhook are optional — configure any combination. Alerts are delivered to all configured notifiers simultaneously.
 
 Every outgoing monitoring message ends with `#gomon` plus contextual tags. Examples include `#webcheck`, `#down`, `#timeout`, `#ssl`, `#prometheus`, `#nodeexporter`, `#cpu`, `#disk`, `#recovery`, and a normalized site or target name.
+
+### Tag-based notification routing
+
+Each website and Prometheus target has routing `tags`; each Telegram or Bale output has its own `tags`. A notification is sent to an output when at least one normalized tag matches. Missing or empty tags default to `general`, preserving the behavior of existing configurations. Routing tags are also included as hashtags in the delivered message.
+
+Keep `general` on an entity to continue sending it to the current default channels. Remove `general` and assign a dedicated tag when the entity should only notify specialized channels.
 
 ## Usage
 

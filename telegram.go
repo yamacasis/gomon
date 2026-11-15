@@ -25,6 +25,7 @@ func newTelegram(cfg TelegramConfig) (*Telegram, error) {
 	if cfg.APIURL == "" {
 		cfg.APIURL = defaultTelegramAPI
 	}
+	cfg.Tags = normalizeRoutingTags(cfg.Tags)
 
 	client, err := buildClient(cfg.SocksProxy)
 	if err != nil {
@@ -36,6 +37,10 @@ func newTelegram(cfg TelegramConfig) (*Telegram, error) {
 	}
 
 	return &Telegram{cfg: cfg, client: client}, nil
+}
+
+func (t *Telegram) routingTags() []string {
+	return t.cfg.Tags
 }
 
 func (t *Telegram) send(text string) error {

@@ -16,7 +16,7 @@ func runHeartbeat(cfg *Config, notifiers []Notifier, logger *Logger) {
 		if err != nil {
 			log.Printf("heartbeat report error: %v", err)
 		} else {
-			notify(notifiers, report)
+			notify(notifiers, report, "general")
 		}
 	}
 }
@@ -77,7 +77,7 @@ func buildReport(cfg *Config, logger *Logger) (string, error) {
 
 	if len(entries) == 0 {
 		sb.WriteString("\nNo monitoring data recorded for this date.")
-		return withAlertTags(sb.String(), "heartbeat", "dailyreport"), nil
+		return withAlertTags(sb.String(), "heartbeat", "dailyreport", "general"), nil
 	}
 
 	sb.WriteString("\n")
@@ -109,5 +109,5 @@ func buildReport(cfg *Config, logger *Logger) (string, error) {
 		sb.WriteString("\n")
 	}
 
-	return withAlertTags(strings.TrimRight(sb.String(), "\n"), "heartbeat", "dailyreport"), nil
+	return withAlertTags(strings.TrimRight(sb.String(), "\n"), "heartbeat", "dailyreport", "general"), nil
 }
