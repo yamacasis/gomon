@@ -45,6 +45,11 @@ func TestMonitorDebouncesDownAndRecovery(t *testing.T) {
 	if !strings.Contains(messages[0], "Cause: TIMEOUT") || !strings.Contains(messages[0], now.Add(3*time.Second).Format(time.RFC3339)) {
 		t.Fatalf("down alert lacks current diagnostics: %s", messages[0])
 	}
+	for _, tag := range []string{"#gomon", "#webcheck", "#down", "#timeout", "#examplecom"} {
+		if !strings.Contains(messages[0], tag) {
+			t.Fatalf("down alert lacks tag %s: %s", tag, messages[0])
+		}
+	}
 
 	if messages, _ := updateMonitorState(site, state, up(now.Add(4*time.Second)), false); len(messages) != 0 {
 		t.Fatalf("first success must not recover, got %v", messages)
@@ -55,5 +60,25 @@ func TestMonitorDebouncesDownAndRecovery(t *testing.T) {
 	}
 	if !strings.Contains(messages[0], now.Add(5*time.Second).Format(time.RFC3339)) {
 		t.Fatalf("recovery alert must use recovery check time: %s", messages[0])
+	}
+	for _, tag := range []string{"#gomon", "#webcheck", "#recovery", "#examplecom"} {
+		if !strings.Contains(messages[0], tag) {
+			t.Fatalf("recovery alert lacks tag %s: %s", tag, messages[0])
+		}
+	}
+}
+
+func TestSSLAlertTags(t *testing.T) {
+	message := buildAlertMsg(
+		Website{URL: "https://example.com", SSLMinDays: 30},
+		CheckResult{Up: true, SSLDays: 5, CheckedAt: time.Now()},
+		false,
+		true,
+		2,
+	)
+	for _, tag := range []string{"#gomon", "#webcheck", "#ssl", "#examplecom"} {
+		if !strings.Contains(message, tag) {
+			t.Fatalf("SSL alert lacks tag %s: %s", tag, message)
+		}
 	}
 }

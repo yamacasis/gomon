@@ -32,7 +32,7 @@ func newTelegram(cfg TelegramConfig) (*Telegram, error) {
 	}
 
 	if cfg.SocksProxy != "" {
-		log.Printf("[TELEGRAM] using SOCKS5 proxy: %s", cfg.SocksProxy)
+		log.Printf("[TELEGRAM] using configured SOCKS5 proxy")
 	}
 
 	return &Telegram{cfg: cfg, client: client}, nil

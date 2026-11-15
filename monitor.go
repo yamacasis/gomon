@@ -113,9 +113,11 @@ func updateMonitorState(site Website, state *monitorState, result CheckResult, s
 
 func buildAlertMsg(site Website, result CheckResult, isDown, sslExpiring bool, failureThreshold int) string {
 	var sb strings.Builder
+	tags := []string{"webcheck", siteAlertTag(site.URL)}
 	sb.WriteString(fmt.Sprintf("🚨 *Alert: %s*\n", site.URL))
 
 	if isDown {
+		tags = append(tags, "down", result.Kind)
 		sb.WriteString(fmt.Sprintf("\n🔴 *Site is DOWN*\nCause: %s\nError: %s", displayKind(result.Kind), result.StatusMsg))
 		sb.WriteString(fmt.Sprintf("\nConfirmed: %d consecutive failed checks; %d request attempt(s) in the last check",
 			failureThreshold, result.Attempts))
@@ -127,6 +129,7 @@ func buildAlertMsg(site Website, result CheckResult, isDown, sslExpiring bool, f
 	}
 
 	if sslExpiring {
+		tags = append(tags, "ssl")
 		if isDown {
 			sb.WriteString("\n")
 		}
@@ -134,7 +137,7 @@ func buildAlertMsg(site Website, result CheckResult, isDown, sslExpiring bool, f
 			result.SSLDays, site.SSLMinDays))
 	}
 
-	return sb.String()
+	return withAlertTags(sb.String(), tags...)
 }
 
 func buildRecoveryMsg(site Website, state *monitorState, result CheckResult, recoveryThreshold int) string {
@@ -149,7 +152,7 @@ func buildRecoveryMsg(site Website, state *monitorState, result CheckResult, rec
 		sb.WriteString(fmt.Sprintf("\nPrevious cause: %s — %s", displayKind(state.lastFailure.Kind), state.lastFailure.StatusMsg))
 	}
 	sb.WriteString(fmt.Sprintf("\nChecked: %s", result.CheckedAt.Format(time.RFC3339)))
-	return sb.String()
+	return withAlertTags(sb.String(), "webcheck", "recovery", siteAlertTag(site.URL))
 }
 
 func displayKind(kind string) string {

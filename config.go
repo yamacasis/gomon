@@ -17,6 +17,12 @@ type TelegramConfig struct {
 	SocksProxy string `yaml:"socks_proxy"` // e.g. socks5://user:pass@host:1080
 }
 
+type BaleConfig struct {
+	BotToken string `yaml:"bot_token"`
+	ChatID   string `yaml:"chat_id"`
+	APIURL   string `yaml:"api_url"` // default: https://tapi.bale.ai
+}
+
 type WebhookConfig struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"` // optional auth headers
@@ -24,6 +30,7 @@ type WebhookConfig struct {
 
 type Config struct {
 	Telegram  TelegramConfig `yaml:"telegram"`
+	Bale      BaleConfig     `yaml:"bale"`
 	Webhook   WebhookConfig  `yaml:"webhook"`
 	Metrics   MetricsConfig  `yaml:"metrics"`
 	Heartbeat struct {

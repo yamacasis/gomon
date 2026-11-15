@@ -15,7 +15,9 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 - Appends structured check results to a log file
 - Exposes Gomon, website, and exporter health at `/metrics/me` for Prometheus
 - Scrapes remote `node_exporter` endpoints and alerts on CPU, RAM, disk, I/O, load, temperature, collector, RAID, and SMART health
+- Adds searchable `#gomon` and event-specific tags to every notification
 - **Telegram notifications** with optional custom/proxied API URL
+- **Bale notifications** through its Telegram-compatible Bot API
 - **Generic webhook notifications** with custom headers for any HTTP endpoint
 
 ## Requirements
@@ -75,6 +77,11 @@ telegram:
   bot_token: "YOUR_BOT_TOKEN"
   chat_id: "YOUR_CHAT_ID"
   api_url: "https://api.telegram.org"  # change for proxy
+
+bale:
+  bot_token: "YOUR_BALE_BOT_TOKEN"
+  chat_id: "YOUR_BALE_CHANNEL_OR_CHAT_ID"
+  api_url: "https://tapi.bale.ai"
 
 webhook:
   url: "https://your-server.com/hook"  # leave empty to disable
@@ -138,6 +145,9 @@ prometheus_targets:
 | `telegram.chat_id` | — | Target chat ID (use @userinfobot to find yours) |
 | `telegram.api_url` | `https://api.telegram.org` | Telegram API base URL — set to a proxy for restricted networks |
 | `telegram.socks_proxy` | — | SOCKS5 proxy for Telegram requests, e.g. `socks5://user:pass@host:1080` |
+| `bale.bot_token` | — | Bale bot token; leave empty to disable Bale notifications |
+| `bale.chat_id` | — | Bale user, group, or channel identifier receiving notifications |
+| `bale.api_url` | `https://tapi.bale.ai` | Bale Telegram-compatible Bot API base URL |
 | `webhook.url` | — | HTTP endpoint to POST alerts to; leave empty to disable |
 | `webhook.headers` | — | Key/value map of HTTP headers (e.g. `Authorization`) |
 | `heartbeat.time` | `08:00` | Daily report time (HH:MM, 24-hour, local timezone) |
@@ -165,7 +175,9 @@ prometheus_targets:
 
 Node exporter threshold defaults are CPU `90%`, RAM `90%`, filesystem `90%`, disk I/O busy `95%`, load per CPU `2`, and temperature `85°C`. Set an individual threshold to a negative number to disable that check.
 
-Both `telegram` and `webhook` are optional — configure one or both. Alerts are delivered to all configured notifiers simultaneously.
+Telegram, Bale, and webhook are optional — configure any combination. Alerts are delivered to all configured notifiers simultaneously.
+
+Every outgoing monitoring message ends with `#gomon` plus contextual tags. Examples include `#webcheck`, `#down`, `#timeout`, `#ssl`, `#prometheus`, `#nodeexporter`, `#cpu`, `#disk`, `#recovery`, and a normalized site or target name.
 
 ## Usage
 

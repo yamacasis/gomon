@@ -581,8 +581,9 @@ func updateExporterState(target PrometheusTargetConfig, state *exporterState, re
 }
 
 func buildExporterDownMessage(target PrometheusTargetConfig, result ExporterResult) string {
-	return fmt.Sprintf("🚨 *Prometheus Target Down*\n`%s` (%s)\nCause: %s\nError: %s\nConfirmed: %d consecutive failed scrapes\nChecked: %s",
+	message := fmt.Sprintf("🚨 *Prometheus Target Down*\n`%s` (%s)\nCause: %s\nError: %s\nConfirmed: %d consecutive failed scrapes\nChecked: %s",
 		target.Name, target.Type, displayKind(result.ErrorKind), result.ErrorMessage, target.FailureThreshold, result.CheckedAt.Format(time.RFC3339))
+	return withAlertTags(message, "prometheus", target.Type, "down", result.ErrorKind, target.Name)
 }
 
 func buildExporterRecoveryMessage(target PrometheusTargetConfig, state *exporterState, result ExporterResult) string {
@@ -590,8 +591,9 @@ func buildExporterRecoveryMessage(target PrometheusTargetConfig, state *exporter
 	if !state.downSince.IsZero() {
 		duration = result.CheckedAt.Sub(state.downSince).Round(time.Second).String()
 	}
-	return fmt.Sprintf("✅ *Prometheus Target Recovered*\n`%s` (%s)\nStable after %d successful scrapes\nOutage duration: %s\nPrevious error: %s\nChecked: %s",
+	message := fmt.Sprintf("✅ *Prometheus Target Recovered*\n`%s` (%s)\nStable after %d successful scrapes\nOutage duration: %s\nPrevious error: %s\nChecked: %s",
 		target.Name, target.Type, target.RecoveryThreshold, duration, state.lastError, result.CheckedAt.Format(time.RFC3339))
+	return withAlertTags(message, "prometheus", target.Type, "recovery", target.Name)
 }
 
 func buildExporterIssueMessage(target PrometheusTargetConfig, checkedAt time.Time, issues []ExporterIssue) string {
@@ -601,7 +603,7 @@ func buildExporterIssueMessage(target PrometheusTargetConfig, checkedAt time.Tim
 		builder.WriteString(fmt.Sprintf("\n- *%s*: %s", issue.Kind, issue.Summary))
 	}
 	builder.WriteString(fmt.Sprintf("\n\nConfirmed: %d consecutive scrapes\nChecked: %s", target.FailureThreshold, checkedAt.Format(time.RFC3339)))
-	return builder.String()
+	return withAlertTags(builder.String(), exporterIssueAlertTags(target, issues, "alert")...)
 }
 
 func buildExporterIssueRecoveryMessage(target PrometheusTargetConfig, checkedAt time.Time, issues []ExporterIssue) string {
@@ -611,7 +613,20 @@ func buildExporterIssueRecoveryMessage(target PrometheusTargetConfig, checkedAt 
 		builder.WriteString(fmt.Sprintf("\n- *%s*: %s", issue.Kind, issue.Summary))
 	}
 	builder.WriteString(fmt.Sprintf("\n\nStable after %d successful scrapes\nChecked: %s", target.RecoveryThreshold, checkedAt.Format(time.RFC3339)))
-	return builder.String()
+	return withAlertTags(builder.String(), exporterIssueAlertTags(target, issues, "recovery")...)
+}
+
+func exporterIssueAlertTags(target PrometheusTargetConfig, issues []ExporterIssue, state string) []string {
+	tags := []string{"prometheus", target.Type, "resource", state, target.Name}
+	for _, issue := range issues {
+		tags = append(tags, issue.Kind)
+		category := issue.Key
+		if separator := strings.IndexByte(category, ':'); separator >= 0 {
+			category = category[:separator]
+		}
+		tags = append(tags, category)
+	}
+	return tags
 }
 
 func firstMetricValue(family *dto.MetricFamily) (float64, bool) {

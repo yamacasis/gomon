@@ -4,6 +4,12 @@ telegram:
   api_url: "https://api.telegram.org"   # change to your proxy URL if needed
   socks_proxy: ""                        # e.g. socks5://user:pass@host:1080
 
+# Optional Bale messenger bot. chat_id may be a user, group, or channel ID.
+bale:
+  bot_token: ""
+  chat_id: ""
+  api_url: "https://tapi.bale.ai"
+
 webhook:
   url: ""                               # leave empty to disable
   headers:

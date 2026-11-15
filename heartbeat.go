@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-
 func runHeartbeat(cfg *Config, notifiers []Notifier, logger *Logger) {
 	for {
 		next := nextFireTime(cfg.Heartbeat.Time)
@@ -74,7 +73,7 @@ func buildReport(cfg *Config, logger *Logger) (string, error) {
 
 	if len(entries) == 0 {
 		sb.WriteString("\nNo monitoring data recorded for this date.")
-		return sb.String(), nil
+		return withAlertTags(sb.String(), "heartbeat", "dailyreport"), nil
 	}
 
 	sb.WriteString("\n")
@@ -103,5 +102,5 @@ func buildReport(cfg *Config, logger *Logger) (string, error) {
 		sb.WriteString("\n")
 	}
 
-	return strings.TrimRight(sb.String(), "\n"), nil
+	return withAlertTags(strings.TrimRight(sb.String(), "\n"), "heartbeat", "dailyreport"), nil
 }

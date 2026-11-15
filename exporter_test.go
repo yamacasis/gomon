@@ -100,6 +100,12 @@ func TestExporterStateDebouncesResourceAndEndpointAlerts(t *testing.T) {
 	bad.CheckedAt = now.Add(time.Minute)
 	if messages := updateExporterState(target, state, bad); len(messages) != 1 {
 		t.Fatalf("second resource violation must alert once: %v", messages)
+	} else {
+		for _, tag := range []string{"#gomon", "#prometheus", "#nodeexporter", "#resource", "#cpu", "#nodea"} {
+			if !strings.Contains(messages[0], tag) {
+				t.Fatalf("resource alert lacks tag %s: %s", tag, messages[0])
+			}
+		}
 	}
 	if messages := updateExporterState(target, state, bad); len(messages) != 0 {
 		t.Fatalf("active resource issue must not repeat: %v", messages)
