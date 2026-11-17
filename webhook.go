@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,11 +11,12 @@ import (
 )
 
 type Webhook struct {
-	cfg WebhookConfig
+	cfg    WebhookConfig
+	client *http.Client
 }
 
 func newWebhook(cfg WebhookConfig) *Webhook {
-	return &Webhook{cfg: cfg}
+	return &Webhook{cfg: cfg, client: &http.Client{Timeout: 15 * time.Second}}
 }
 
 func (w *Webhook) routingTags() []string {
@@ -22,6 +24,14 @@ func (w *Webhook) routingTags() []string {
 }
 
 func (w *Webhook) send(text string) error {
+	return w.sendContext(context.Background(), text)
+}
+
+func (w *Webhook) notifierID() string {
+	return "webhook:default"
+}
+
+func (w *Webhook) sendContext(ctx context.Context, text string) error {
 	if w.cfg.URL == "" {
 		return nil
 	}
@@ -33,7 +43,7 @@ func (w *Webhook) send(text string) error {
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 
-	req, err := http.NewRequest(http.MethodPost, w.cfg.URL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.cfg.URL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("webhook build request: %w", err)
 	}
@@ -42,7 +52,7 @@ func (w *Webhook) send(text string) error {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := w.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("webhook request: %w", err)
 	}

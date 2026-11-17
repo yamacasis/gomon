@@ -108,18 +108,18 @@ func (s *exporterState) activeIssueCount() int {
 	return count
 }
 
-func runPrometheusTarget(target PrometheusTargetConfig, notifiers []Notifier, metrics *monitorMetrics) {
+func runPrometheusTarget(target PrometheusTargetConfig, notifications *notificationDispatcher, metrics *monitorMetrics) {
 	state := &exporterState{issues: make(map[string]*exporterIssueState)}
-	doPrometheusCheck(target, state, notifiers, metrics)
+	doPrometheusCheck(target, state, notifications, metrics)
 
 	ticker := time.NewTicker(target.Interval)
 	defer ticker.Stop()
 	for range ticker.C {
-		doPrometheusCheck(target, state, notifiers, metrics)
+		doPrometheusCheck(target, state, notifications, metrics)
 	}
 }
 
-func doPrometheusCheck(target PrometheusTargetConfig, state *exporterState, notifiers []Notifier, metrics *monitorMetrics) {
+func doPrometheusCheck(target PrometheusTargetConfig, state *exporterState, notifications *notificationDispatcher, metrics *monitorMetrics) {
 	result := checkPrometheusTarget(target, state)
 	messages := updateExporterState(target, state, result)
 	metrics.recordExporter(target, state, result)
@@ -133,7 +133,7 @@ func doPrometheusCheck(target PrometheusTargetConfig, state *exporterState, noti
 			target.Name, target.Type, result.ErrorKind, result.Duration.Round(time.Millisecond), result.ErrorMessage)
 	}
 	for _, message := range messages {
-		notify(notifiers, message, target.Tags...)
+		notifications.notify(message, target.Tags...)
 	}
 }
 

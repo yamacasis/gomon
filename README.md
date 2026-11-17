@@ -1,10 +1,11 @@
 # Gomon
 
-A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML content, and SSL certificate expiry — sending alerts via Telegram and/or webhook with daily summary reports.
+A lightweight website and API monitoring tool written in Go. Monitors HTTP responses, HTML or JSON content, and SSL certificate expiry — sending reliable alerts via Telegram, Bale, and/or webhook with daily summary reports.
 
 ## Features
 
 - Monitors multiple websites on independent intervals
+- Checks APIs with custom HTTP methods, headers, bearer tokens, request bodies, expected status codes, and JSON assertions
 - Detects site downtime (HTTP errors, no response, non-HTML content)
 - Retries transient failures and confirms state changes across consecutive checks
 - Classifies failures as DNS, timeout, TLS, connection, HTTP, or content errors
@@ -18,6 +19,8 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 - Scrapes remote `node_exporter` endpoints and alerts on CPU, RAM, disk, I/O, load, temperature, collector, RAID, and SMART health
 - Adds searchable `#gomon` and event-specific tags to every notification
 - Routes tagged website/exporter alerts to any number of tagged Telegram and Bale channels
+- Persists notifications before delivery and retries failed channels with exponential backoff
+- Records the final delivery result for every target channel in a JSONL audit log
 - **Telegram notifications** with optional custom/proxied API URL
 - **Bale notifications** through its Telegram-compatible Bot API
 - **Generic webhook notifications** with custom headers for any HTTP endpoint
@@ -25,7 +28,7 @@ A lightweight website monitoring tool written in Go. Monitors HTTP status, HTML 
 ## Requirements
 
 - Go 1.25+ (build from source only)
-- At least one notifier configured (Telegram and/or webhook)
+- At least one notifier configured (Telegram, Bale, and/or webhook)
 
 ## Installation
 
@@ -106,6 +109,14 @@ webhook:
   headers:
     Authorization: "Bearer YOUR_TOKEN"
 
+notifications:
+  queue_file: "notification-queue.json"
+  delivery_log: "notification-deliveries.log"
+  timeout: 15s
+  initial_retry: 5s
+  max_retry: 5m
+  max_attempts: 10
+
 heartbeat:
   time: "08:00"       # 24-hour local time for daily report
 
@@ -132,6 +143,22 @@ websites:
     interval: 1m
     ssl: true
     ssl_min_days: 14
+
+  - url: "https://api.example.com/v1/health"
+    method: POST
+    headers:
+      X-Tenant: "production"
+    bearer_token: "YOUR_API_TOKEN"
+    body: '{"probe":true}'
+    expected_status: 200
+    response_type: json
+    response_contains: ["healthy"]
+    response_not_contains: ["maintenance"]
+    json_assertions:
+      status: "ok"
+      data.ready: true
+      data.regions.0.online: true
+    interval: 1m
 
   - url: "http://internal.example.com"
     interval: 5m
@@ -177,11 +204,27 @@ prometheus_targets:
 | `bale_channels[]` | — | Additional Bale outputs, each with `name`, `tags`, `bot_token`, `chat_id`, and optional `api_url` |
 | `webhook.url` | — | HTTP endpoint to POST alerts to; leave empty to disable |
 | `webhook.headers` | — | Key/value map of HTTP headers (e.g. `Authorization`) |
+| `notifications.queue_file` | beside `log_file` | Persistent pending-notification queue; messages are written here before delivery |
+| `notifications.delivery_log` | beside `log_file` | JSONL audit log containing each channel's final `delivered` or `failed` result |
+| `notifications.timeout` | `15s` | Maximum time allowed for one channel delivery attempt |
+| `notifications.initial_retry` | `5s` | Delay after the first failed delivery; later delays grow exponentially |
+| `notifications.max_retry` | `5m` | Maximum delay between delivery attempts |
+| `notifications.max_attempts` | `10` | Attempts per channel before recording a permanent failure |
 | `heartbeat.time` | `08:00` | Daily report time (HH:MM, 24-hour, local timezone) |
 | `metrics.port` | `0` | Port for Gomon's Prometheus endpoint; zero disables it |
 | `metrics.listen_address` | `0.0.0.0` | Address used when the metrics endpoint is enabled |
 | `log_file` | `monitor.log` | Path to the append-only status log |
 | `websites[].url` | — | Full URL or `host:port` (scheme inferred from `ssl`) |
+| `websites[].method` | `GET` | HTTP request method such as `GET`, `POST`, or `HEAD` |
+| `websites[].headers` | — | Request headers; use these for custom authentication schemes |
+| `websites[].bearer_token` | — | Convenience field that sends an `Authorization: Bearer ...` header |
+| `websites[].body` | — | Request body; JSON bodies automatically receive `application/json` when no content type is configured |
+| `websites[].expected_status` | — | One exact acceptable HTTP status code |
+| `websites[].expected_statuses` | — | Multiple acceptable HTTP status codes; without either field, all 2xx and 3xx responses are accepted |
+| `websites[].response_type` | `html` | Response parser: `html`, `json`, `text`, or `any`; JSON assertions imply `json` when omitted |
+| `websites[].response_contains` | — | Strings that must all occur in the response body |
+| `websites[].response_not_contains` | — | Strings that must not occur in the response body |
+| `websites[].json_assertions` | — | Map of dot-separated JSON paths to expected values; numeric path parts address array indexes |
 | `websites[].tags` | `[general]` | Tags used to route this site's notifications |
 | `websites[].cloudflare` | `false` | Ignore no-response network failures for Cloudflare-fronted sites; HTTP/content errors still affect availability |
 | `websites[].interval` | `60s` | Check frequency — supports `s`, `m`, `h` suffixes |
@@ -206,6 +249,8 @@ prometheus_targets:
 Node exporter threshold defaults are CPU `90%`, RAM `90%`, filesystem `90%`, disk I/O busy `95%`, load per CPU `2`, and temperature `85°C`. Set an individual threshold to a negative number to disable that check.
 
 Telegram, Bale, and webhook are optional — configure any combination. Alerts are delivered to all configured notifiers simultaneously.
+
+Every alert is first committed to `notifications.queue_file`. Delivery is tracked independently for each matching channel, so one unavailable output does not cause successful outputs to receive the alert again. Pending deliveries are restored after a restart. Final per-channel results are appended to `notifications.delivery_log` without storing the message body there.
 
 Every outgoing monitoring message ends with `#gomon` plus contextual tags. Examples include `#webcheck`, `#down`, `#timeout`, `#ssl`, `#prometheus`, `#nodeexporter`, `#cpu`, `#disk`, `#recovery`, and a normalized site or target name.
 
@@ -382,6 +427,7 @@ gomon/
 ├── metrics.go       # Gomon Prometheus registry and /metrics/me server
 ├── exporter.go      # Remote Prometheus/node_exporter scraper and analyzer
 ├── notifier.go      # Notifier interface — fans out to all configured backends
+├── notification_queue.go # Persistent per-channel delivery queue and retry worker
 ├── telegram.go      # Telegram Bot API client (supports custom/proxied API URL)
 ├── webhook.go       # Generic HTTP webhook notifier
 ├── logger.go        # Log file writer and reader

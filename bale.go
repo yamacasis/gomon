@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +35,18 @@ func (b *Bale) routingTags() []string {
 }
 
 func (b *Bale) send(text string) error {
+	return b.sendContext(context.Background(), text)
+}
+
+func (b *Bale) notifierID() string {
+	name := b.cfg.Name
+	if name == "" {
+		name = "default"
+	}
+	return "bale:" + name
+}
+
+func (b *Bale) sendContext(ctx context.Context, text string) error {
 	if b.cfg.BotToken == "" || b.cfg.ChatID == "" {
 		return nil
 	}
@@ -49,7 +62,12 @@ func (b *Bale) send(text string) error {
 		return fmt.Errorf("bale encode request: %w", err)
 	}
 
-	response, err := b.client.Post(endpoint, "application/json", bytes.NewReader(payload))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("bale build request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := b.client.Do(request)
 	if err != nil {
 		return fmt.Errorf("bale request: %w", err)
 	}

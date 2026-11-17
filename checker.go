@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -82,13 +86,30 @@ func checkSiteOnce(site Website) (result CheckResult) {
 	}
 	defer transport.CloseIdleConnections()
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	method := strings.ToUpper(strings.TrimSpace(site.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+	req, err := http.NewRequest(method, url, strings.NewReader(site.Body))
 	if err != nil {
 		result.Kind = "configuration"
 		result.StatusMsg = shortError(err)
 		return result
 	}
 	req.Header.Set("User-Agent", "gomon")
+	for key, value := range site.Headers {
+		req.Header.Set(key, value)
+	}
+	if site.BearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+site.BearerToken)
+	}
+	if site.Body != "" && req.Header.Get("Content-Type") == "" {
+		if json.Valid([]byte(site.Body)) {
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+		}
+	}
 	trace := &httptrace.ClientTrace{
 		GotConn: func(info httptrace.GotConnInfo) {
 			result.RemoteAddr = info.Conn.RemoteAddr().String()
@@ -105,15 +126,19 @@ func checkSiteOnce(site Website) (result CheckResult) {
 	}
 	defer resp.Body.Close()
 	result.StatusCode = resp.StatusCode
+	if site.SSL && resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+		cert := resp.TLS.PeerCertificates[0]
+		result.SSLDays = int(time.Until(cert.NotAfter).Hours() / 24)
+	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+	if !statusAccepted(site, resp.StatusCode) {
 		result.Up = false
 		result.Kind = "http"
-		result.StatusMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		result.StatusMsg = fmt.Sprintf("HTTP %d (unexpected status)", resp.StatusCode)
 		return result
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		result.Up = false
 		result.Kind = classifyRequestError(err)
@@ -123,22 +148,145 @@ func checkSiteOnce(site Website) (result CheckResult) {
 		result.StatusMsg = "reading response body: " + shortError(err)
 		return result
 	}
-	if !containsHTML(string(body)) {
-		result.Up = false
-		result.Kind = "content"
-		result.StatusMsg = "no HTML content in response"
-		return result
+	responseType := strings.ToLower(strings.TrimSpace(site.ResponseType))
+	if responseType == "" {
+		if len(site.JSONAssertions) > 0 {
+			responseType = "json"
+		} else {
+			responseType = "html"
+		}
+	}
+	var decodedJSON interface{}
+	switch responseType {
+	case "html":
+		if !containsHTML(string(body)) {
+			result.Up = false
+			result.Kind = "content"
+			result.StatusMsg = "no HTML content in response"
+			return result
+		}
+	case "json":
+		if !json.Valid(body) {
+			result.Up = false
+			result.Kind = "content"
+			result.StatusMsg = "invalid JSON response"
+			return result
+		}
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.UseNumber()
+		if err := decoder.Decode(&decodedJSON); err != nil {
+			result.Up = false
+			result.Kind = "content"
+			result.StatusMsg = "invalid JSON response: " + shortError(err)
+			return result
+		}
+	}
+	for _, expected := range site.ResponseContains {
+		if !bytes.Contains(body, []byte(expected)) {
+			result.Up = false
+			result.Kind = "content"
+			result.StatusMsg = fmt.Sprintf("response does not contain %q", expected)
+			return result
+		}
+	}
+	for _, forbidden := range site.ResponseNotContains {
+		if bytes.Contains(body, []byte(forbidden)) {
+			result.Up = false
+			result.Kind = "content"
+			result.StatusMsg = fmt.Sprintf("response contains forbidden value %q", forbidden)
+			return result
+		}
+	}
+	if len(site.JSONAssertions) > 0 {
+		if decodedJSON == nil {
+			decoder := json.NewDecoder(bytes.NewReader(body))
+			decoder.UseNumber()
+			if err := decoder.Decode(&decodedJSON); err != nil {
+				result.Up = false
+				result.Kind = "content"
+				result.StatusMsg = "invalid JSON response: " + shortError(err)
+				return result
+			}
+		}
+		for path, expected := range site.JSONAssertions {
+			actual, ok := lookupJSONPath(decodedJSON, path)
+			if !ok {
+				result.Up = false
+				result.Kind = "content"
+				result.StatusMsg = fmt.Sprintf("JSON path %q was not found", path)
+				return result
+			}
+			if !jsonValuesEqual(actual, expected) {
+				result.Up = false
+				result.Kind = "content"
+				result.StatusMsg = fmt.Sprintf("JSON path %q did not match expected value", path)
+				return result
+			}
+		}
 	}
 
 	result.Up = true
 	result.StatusMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
 
-	if site.SSL && resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
-		cert := resp.TLS.PeerCertificates[0]
-		result.SSLDays = int(time.Until(cert.NotAfter).Hours() / 24)
-	}
-
 	return result
+}
+
+func statusAccepted(site Website, status int) bool {
+	if site.ExpectedStatus != 0 && status == site.ExpectedStatus {
+		return true
+	}
+	for _, expected := range site.ExpectedStatuses {
+		if status == expected {
+			return true
+		}
+	}
+	if site.ExpectedStatus != 0 || len(site.ExpectedStatuses) > 0 {
+		return false
+	}
+	return status >= 200 && status < 400
+}
+
+func lookupJSONPath(value interface{}, path string) (interface{}, bool) {
+	if strings.TrimSpace(path) == "" {
+		return value, true
+	}
+	current := value
+	for _, part := range strings.Split(path, ".") {
+		switch typed := current.(type) {
+		case map[string]interface{}:
+			var ok bool
+			current, ok = typed[part]
+			if !ok {
+				return nil, false
+			}
+		case []interface{}:
+			index, err := strconv.Atoi(part)
+			if err != nil || index < 0 || index >= len(typed) {
+				return nil, false
+			}
+			current = typed[index]
+		default:
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+func jsonValuesEqual(actual, expected interface{}) bool {
+	normalize := func(value interface{}) interface{} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return value
+		}
+		var decoded interface{}
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.UseNumber()
+		if err := decoder.Decode(&decoded); err != nil {
+			return value
+		}
+		return decoded
+	}
+	return reflect.DeepEqual(normalize(actual), normalize(expected))
 }
 
 func classifyRequestError(err error) string {

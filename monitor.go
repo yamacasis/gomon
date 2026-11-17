@@ -17,19 +17,19 @@ type monitorState struct {
 	sslAlerted           bool
 }
 
-func runMonitor(site Website, notifiers []Notifier, logger *Logger, metrics *monitorMetrics) {
+func runMonitor(site Website, notifications *notificationDispatcher, logger *Logger, metrics *monitorMetrics) {
 	state := &monitorState{}
 
-	doCheck(site, state, notifiers, logger, metrics)
+	doCheck(site, state, notifications, logger, metrics)
 
 	ticker := time.NewTicker(site.Interval)
 	defer ticker.Stop()
 	for range ticker.C {
-		doCheck(site, state, notifiers, logger, metrics)
+		doCheck(site, state, notifications, logger, metrics)
 	}
 }
 
-func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Logger, metrics *monitorMetrics) {
+func doCheck(site Website, state *monitorState, notifications *notificationDispatcher, logger *Logger, metrics *monitorMetrics) {
 	result := checkSite(site)
 	result.Suppressed = shouldSuppressCloudflareNetworkFailure(site, result)
 	logger.write(result)
@@ -60,7 +60,7 @@ func doCheck(site Website, state *monitorState, notifiers []Notifier, logger *Lo
 		log.Printf("[CHECK] RECOVERED %s after %d consecutive successful checks", site.URL, site.RecoveryThreshold)
 	}
 	for _, message := range messages {
-		notify(notifiers, message, site.Tags...)
+		notifications.notify(message, site.Tags...)
 	}
 }
 

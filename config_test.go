@@ -185,3 +185,66 @@ websites:
 		t.Fatalf("expected Cloudflare policy to be enabled: %+v", cfg.Websites)
 	}
 }
+
+func TestLoadConfigAPIAndNotificationSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`
+notifications:
+  queue_file: state/queue.json
+  delivery_log: state/deliveries.log
+  timeout: 3s
+  initial_retry: 2s
+  max_retry: 1m
+  max_attempts: 7
+websites:
+  - url: https://api.example.com/health
+    method: post
+    bearer_token: secret
+    body: '{"probe":true}'
+    expected_statuses: [200, 201]
+    response_type: json
+    response_contains: [healthy]
+    json_assertions:
+      status: ok
+      data.ready: true
+`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Notifications.Timeout != 3*time.Second || cfg.Notifications.MaxAttempts != 7 {
+		t.Fatalf("unexpected notification settings: %+v", cfg.Notifications)
+	}
+	site := cfg.Websites[0]
+	if site.Method != "POST" || site.ResponseType != "json" || len(site.ExpectedStatuses) != 2 {
+		t.Fatalf("unexpected API settings: %+v", site)
+	}
+	if site.JSONAssertions["status"] != "ok" || site.JSONAssertions["data.ready"] != true {
+		t.Fatalf("unexpected JSON assertions: %#v", site.JSONAssertions)
+	}
+}
+
+func TestExampleConfigLoads(t *testing.T) {
+	if _, err := loadConfig("config.example.yaml"); err != nil {
+		t.Fatalf("config.example.yaml must remain valid: %v", err)
+	}
+}
+
+func TestNotificationFilesDefaultBesideMonitorLog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte("log_file: state/monitor.log\n")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Notifications.QueueFile != filepath.Join("state", "notification-queue.json") ||
+		cfg.Notifications.DeliveryLog != filepath.Join("state", "notification-deliveries.log") {
+		t.Fatalf("notification files should default beside log_file: %+v", cfg.Notifications)
+	}
+}

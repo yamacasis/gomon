@@ -122,6 +122,8 @@ if [ ! -f "${CONFIG_DIR}/config.yaml" ]; then
 
   # Set the log file to the system log path
   sed -i 's|^log_file:.*|log_file: "/var/log/gomon/monitor.log"|' "${CONFIG_DIR}/config.yaml"
+  sed -i 's|^  queue_file:.*|  queue_file: "/var/log/gomon/notification-queue.json"|' "${CONFIG_DIR}/config.yaml"
+  sed -i 's|^  delivery_log:.*|  delivery_log: "/var/log/gomon/notification-deliveries.log"|' "${CONFIG_DIR}/config.yaml"
 
   warn "Config file created at ${CONFIG_DIR}/config.yaml"
   warn "Edit it and set your Telegram token / chat ID before starting."

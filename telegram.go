@@ -44,6 +44,18 @@ func (t *Telegram) routingTags() []string {
 }
 
 func (t *Telegram) send(text string) error {
+	return t.sendContext(context.Background(), text)
+}
+
+func (t *Telegram) notifierID() string {
+	name := t.cfg.Name
+	if name == "" {
+		name = "default"
+	}
+	return "telegram:" + name
+}
+
+func (t *Telegram) sendContext(ctx context.Context, text string) error {
 	if t.cfg.BotToken == "" || t.cfg.ChatID == "" {
 		return nil
 	}
@@ -58,7 +70,12 @@ func (t *Telegram) send(text string) error {
 		"parse_mode": "Markdown",
 	})
 
-	resp, err := t.client.Post(endpoint, "application/json", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("telegram build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("telegram request: %w", err)
 	}

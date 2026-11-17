@@ -32,6 +32,16 @@ webhook:
   headers:
     # Authorization: "Bearer YOUR_TOKEN"
 
+# Alerts are written to queue_file before delivery. Failed sends are retried
+# with exponential backoff and each final channel result is appended as JSONL.
+notifications:
+  queue_file: "notification-queue.json"
+  delivery_log: "notification-deliveries.log"
+  timeout: 15s
+  initial_retry: 5s
+  max_retry: 5m
+  max_attempts: 10
+
 heartbeat:
   time: "08:00"
 
@@ -56,6 +66,20 @@ websites:
     ssl_min_days: 30
 
   - url: "https://api.example.com:8443"
+    # API checks can use any HTTP method, headers/body, exact status codes,
+    # body assertions, and dot-separated JSON paths (array indexes are numeric).
+    method: POST
+    headers:
+      X-Tenant: "production"
+    bearer_token: "YOUR_API_TOKEN"
+    body: '{"probe":true}'
+    expected_status: 200
+    response_type: json
+    response_contains: ["healthy"]
+    response_not_contains: ["maintenance"]
+    json_assertions:
+      status: "ok"
+      data.ready: true
     interval: 1m
     ssl: true
     ssl_min_days: 14

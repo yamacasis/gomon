@@ -7,6 +7,8 @@ config.yaml
 
 # Runtime data
 *.log
+notification-queue.json
+notification-queue.json.tmp
 
 # Go workspace
 go.work

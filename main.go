@@ -28,6 +28,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("notifiers: %v", err)
 	}
+	notifications, err := newNotificationDispatcher(cfg.Notifications, notifiers)
+	if err != nil {
+		log.Fatalf("notification queue: %v", err)
+	}
+	defer notifications.close()
 	metrics := newMonitorMetrics()
 	metricsServer, err := startMetricsServer(cfg.Metrics, metrics)
 	if err != nil {
@@ -40,14 +45,14 @@ func main() {
 
 	for _, site := range cfg.Websites {
 		site := site
-		go runMonitor(site, notifiers, logger, metrics)
+		go runMonitor(site, notifications, logger, metrics)
 	}
 	for _, target := range cfg.PrometheusTargets {
 		target := target
-		go runPrometheusTarget(target, notifiers, metrics)
+		go runPrometheusTarget(target, notifications, metrics)
 	}
 
-	go runHeartbeat(cfg, notifiers, logger)
+	go runHeartbeat(cfg, notifications, logger)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

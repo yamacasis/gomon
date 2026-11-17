@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,12 +35,13 @@ type WebhookConfig struct {
 }
 
 type Config struct {
-	Telegram         TelegramConfig   `yaml:"telegram"`
-	TelegramChannels []TelegramConfig `yaml:"telegram_channels"`
-	Bale             BaleConfig       `yaml:"bale"`
-	BaleChannels     []BaleConfig     `yaml:"bale_channels"`
-	Webhook          WebhookConfig    `yaml:"webhook"`
-	Metrics          MetricsConfig    `yaml:"metrics"`
+	Telegram         TelegramConfig     `yaml:"telegram"`
+	TelegramChannels []TelegramConfig   `yaml:"telegram_channels"`
+	Bale             BaleConfig         `yaml:"bale"`
+	BaleChannels     []BaleConfig       `yaml:"bale_channels"`
+	Webhook          WebhookConfig      `yaml:"webhook"`
+	Notifications    NotificationConfig `yaml:"notifications"`
+	Metrics          MetricsConfig      `yaml:"metrics"`
 	Heartbeat        struct {
 		Time string `yaml:"time"` // "HH:MM" 24-hour format
 	} `yaml:"heartbeat"`
@@ -47,23 +50,42 @@ type Config struct {
 	PrometheusTargets []PrometheusTargetConfig `yaml:"prometheus_targets"`
 }
 
+type NotificationConfig struct {
+	QueueFile    string        `yaml:"queue_file"`
+	DeliveryLog  string        `yaml:"delivery_log"`
+	Timeout      time.Duration `yaml:"timeout"`
+	InitialRetry time.Duration `yaml:"initial_retry"`
+	MaxRetry     time.Duration `yaml:"max_retry"`
+	MaxAttempts  int           `yaml:"max_attempts"`
+}
+
 type MetricsConfig struct {
 	Port          int    `yaml:"port"`
 	ListenAddress string `yaml:"listen_address"`
 }
 
 type Website struct {
-	URL               string        `yaml:"url"`
-	Tags              []string      `yaml:"tags"`
-	Cloudflare        bool          `yaml:"cloudflare"`
-	Interval          time.Duration `yaml:"interval"`
-	Timeout           time.Duration `yaml:"timeout"`
-	Attempts          int           `yaml:"attempts"`
-	RetryDelay        time.Duration `yaml:"retry_delay"`
-	FailureThreshold  int           `yaml:"failure_threshold"`
-	RecoveryThreshold int           `yaml:"recovery_threshold"`
-	SSL               bool          `yaml:"ssl"`
-	SSLMinDays        int           `yaml:"ssl_min_days"`
+	URL                 string                 `yaml:"url"`
+	Method              string                 `yaml:"method"`
+	Headers             map[string]string      `yaml:"headers"`
+	BearerToken         string                 `yaml:"bearer_token"`
+	Body                string                 `yaml:"body"`
+	ExpectedStatus      int                    `yaml:"expected_status"`
+	ExpectedStatuses    []int                  `yaml:"expected_statuses"`
+	ResponseType        string                 `yaml:"response_type"`
+	ResponseContains    []string               `yaml:"response_contains"`
+	ResponseNotContains []string               `yaml:"response_not_contains"`
+	JSONAssertions      map[string]interface{} `yaml:"json_assertions"`
+	Tags                []string               `yaml:"tags"`
+	Cloudflare          bool                   `yaml:"cloudflare"`
+	Interval            time.Duration          `yaml:"interval"`
+	Timeout             time.Duration          `yaml:"timeout"`
+	Attempts            int                    `yaml:"attempts"`
+	RetryDelay          time.Duration          `yaml:"retry_delay"`
+	FailureThreshold    int                    `yaml:"failure_threshold"`
+	RecoveryThreshold   int                    `yaml:"recovery_threshold"`
+	SSL                 bool                   `yaml:"ssl"`
+	SSLMinDays          int                    `yaml:"ssl_min_days"`
 }
 
 type PrometheusTargetConfig struct {
@@ -95,20 +117,24 @@ type NodeExporterThresholds struct {
 }
 
 const (
-	defaultCheckInterval     = 60 * time.Second
-	defaultCheckTimeout      = 15 * time.Second
-	defaultCheckAttempts     = 3
-	defaultRetryDelay        = time.Second
-	defaultFailureThreshold  = 2
-	defaultRecoveryThreshold = 2
-	defaultExporterInterval  = 60 * time.Second
-	defaultExporterTimeout   = 10 * time.Second
-	defaultCPUPercent        = 90.0
-	defaultRAMPercent        = 90.0
-	defaultDiskPercent       = 90.0
-	defaultDiskIOPercent     = 95.0
-	defaultLoadPerCPU        = 2.0
-	defaultTemperature       = 85.0
+	defaultCheckInterval            = 60 * time.Second
+	defaultCheckTimeout             = 15 * time.Second
+	defaultCheckAttempts            = 3
+	defaultRetryDelay               = time.Second
+	defaultFailureThreshold         = 2
+	defaultRecoveryThreshold        = 2
+	defaultExporterInterval         = 60 * time.Second
+	defaultExporterTimeout          = 10 * time.Second
+	defaultCPUPercent               = 90.0
+	defaultRAMPercent               = 90.0
+	defaultDiskPercent              = 90.0
+	defaultDiskIOPercent            = 95.0
+	defaultLoadPerCPU               = 2.0
+	defaultTemperature              = 85.0
+	defaultNotificationTimeout      = 15 * time.Second
+	defaultNotificationInitialRetry = 5 * time.Second
+	defaultNotificationMaxRetry     = 5 * time.Minute
+	defaultNotificationMaxAttempts  = 10
 )
 
 func loadConfig(path string) (*Config, error) {
@@ -122,6 +148,30 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if cfg.LogFile == "" {
 		cfg.LogFile = "monitor.log"
+	}
+	if cfg.Notifications.QueueFile == "" {
+		cfg.Notifications.QueueFile = filepath.Join(filepath.Dir(cfg.LogFile), "notification-queue.json")
+	}
+	if cfg.Notifications.DeliveryLog == "" {
+		cfg.Notifications.DeliveryLog = filepath.Join(filepath.Dir(cfg.LogFile), "notification-deliveries.log")
+	}
+	if cfg.Notifications.Timeout <= 0 {
+		cfg.Notifications.Timeout = defaultNotificationTimeout
+	}
+	if cfg.Notifications.InitialRetry <= 0 {
+		cfg.Notifications.InitialRetry = defaultNotificationInitialRetry
+	}
+	if cfg.Notifications.MaxRetry <= 0 {
+		cfg.Notifications.MaxRetry = defaultNotificationMaxRetry
+	}
+	if cfg.Notifications.MaxRetry < cfg.Notifications.InitialRetry {
+		return nil, fmt.Errorf("notifications.max_retry must be greater than or equal to initial_retry")
+	}
+	if cfg.Notifications.MaxAttempts < 0 {
+		return nil, fmt.Errorf("notifications.max_attempts must not be negative")
+	}
+	if cfg.Notifications.MaxAttempts == 0 {
+		cfg.Notifications.MaxAttempts = defaultNotificationMaxAttempts
 	}
 	if cfg.Heartbeat.Time == "" {
 		cfg.Heartbeat.Time = "08:00"
@@ -141,30 +191,65 @@ func loadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	for i := range cfg.Websites {
-		cfg.Websites[i].Tags = normalizeRoutingTags(cfg.Websites[i].Tags)
-		if cfg.Websites[i].Interval <= 0 {
-			cfg.Websites[i].Interval = defaultCheckInterval
+		site := &cfg.Websites[i]
+		site.Tags = normalizeRoutingTags(site.Tags)
+		site.Method = strings.ToUpper(strings.TrimSpace(site.Method))
+		if site.Method == "" {
+			site.Method = http.MethodGet
 		}
-		if cfg.Websites[i].Timeout <= 0 {
-			cfg.Websites[i].Timeout = defaultCheckTimeout
+		if !validHTTPMethod(site.Method) {
+			return nil, fmt.Errorf("websites[%d].method %q is invalid", i, site.Method)
 		}
-		if cfg.Websites[i].Attempts <= 0 {
-			cfg.Websites[i].Attempts = defaultCheckAttempts
+		for header := range site.Headers {
+			if strings.EqualFold(strings.TrimSpace(header), "Authorization") && site.BearerToken != "" {
+				return nil, fmt.Errorf("websites[%d] cannot use bearer_token and an Authorization header together", i)
+			}
 		}
-		if cfg.Websites[i].RetryDelay < 0 {
+		site.ResponseType = strings.ToLower(strings.TrimSpace(site.ResponseType))
+		if site.ResponseType == "" {
+			if len(site.JSONAssertions) > 0 {
+				site.ResponseType = "json"
+			} else {
+				site.ResponseType = "html"
+			}
+		}
+		switch site.ResponseType {
+		case "html", "json", "text", "any":
+		default:
+			return nil, fmt.Errorf("websites[%d].response_type must be html, json, text, or any", i)
+		}
+		statuses := append([]int(nil), site.ExpectedStatuses...)
+		if site.ExpectedStatus != 0 {
+			statuses = append(statuses, site.ExpectedStatus)
+		}
+		for _, status := range statuses {
+			if status < 100 || status > 599 {
+				return nil, fmt.Errorf("websites[%d] expected HTTP status %d is invalid", i, status)
+			}
+		}
+		if site.Interval <= 0 {
+			site.Interval = defaultCheckInterval
+		}
+		if site.Timeout <= 0 {
+			site.Timeout = defaultCheckTimeout
+		}
+		if site.Attempts <= 0 {
+			site.Attempts = defaultCheckAttempts
+		}
+		if site.RetryDelay < 0 {
 			return nil, fmt.Errorf("websites[%d].retry_delay must not be negative", i)
 		}
-		if cfg.Websites[i].RetryDelay == 0 {
-			cfg.Websites[i].RetryDelay = defaultRetryDelay
+		if site.RetryDelay == 0 {
+			site.RetryDelay = defaultRetryDelay
 		}
-		if cfg.Websites[i].FailureThreshold <= 0 {
-			cfg.Websites[i].FailureThreshold = defaultFailureThreshold
+		if site.FailureThreshold <= 0 {
+			site.FailureThreshold = defaultFailureThreshold
 		}
-		if cfg.Websites[i].RecoveryThreshold <= 0 {
-			cfg.Websites[i].RecoveryThreshold = defaultRecoveryThreshold
+		if site.RecoveryThreshold <= 0 {
+			site.RecoveryThreshold = defaultRecoveryThreshold
 		}
-		if cfg.Websites[i].SSLMinDays == 0 {
-			cfg.Websites[i].SSLMinDays = 30
+		if site.SSLMinDays == 0 {
+			site.SSLMinDays = 30
 		}
 	}
 	seenTargetNames := make(map[string]struct{}, len(cfg.PrometheusTargets))
@@ -218,6 +303,18 @@ func loadConfig(path string) (*Config, error) {
 		applyNodeExporterThresholdDefaults(&target.Thresholds)
 	}
 	return &cfg, nil
+}
+
+func validHTTPMethod(method string) bool {
+	if method == "" {
+		return false
+	}
+	for _, r := range method {
+		if r <= 32 || r >= 127 || strings.ContainsRune("()<>@,;:\\\"/[]?={}\t", r) {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeTelegramChannels(channels []TelegramConfig) error {
